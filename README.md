@@ -1,6 +1,11 @@
 # Coding Space
 
-My Coding Space
+## Requirements
+
+- Windows 10/11
+- Node.js & npm
+- Git
+- [psmux](https://github.com/psmux/psmux) (optional, for psmux integration)
 
 ## Features
 
@@ -19,16 +24,4 @@ npm install
 npm start
 ```
 
-## Usage
 
-1. Click **Add Project** to select a git repository root.
-2. Select a worktree to view its integrated terminal.
-3. Use the **+** button in the terminal tab bar to open new terminals, OpenCode, or Gemini.
-4. Use quick action buttons to open the worktree in VS Code, Android Studio, or Antigravity.
-
-## Requirements
-
-- Windows 10/11
-- Node.js & npm
-- Git
-- [psmux](https://github.com/psmux/psmux) (optional, for psmux integration)

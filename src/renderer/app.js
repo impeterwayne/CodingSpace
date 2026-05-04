@@ -37,8 +37,10 @@ const state = {
   useExternalWt: false,
   useTmux: true,
   workspaceSidebarCollapsed: false,
+  terminalTabRailCollapsed: false,
   expandedProjects: new Set(),
   terminals: new Map(),   // id -> { term, fitAddon, paneEl, name, cwd, worktreePath, cleanup }
+  toolStandbys: new Map(),
   activeTerminalId: null,
   activeWorktreePath: null, // which worktree's tabs are currently shown
   worktreeActiveTerminal: new Map(), // worktreePath -> last active terminal id
@@ -68,8 +70,10 @@ const dom = {
   modalCloseBtn: $('#modal-close-btn'),
   terminalWelcome: $('#terminal-welcome'),
   terminalContainer: $('#terminal-container'),
+  terminalTabRail: $('#terminal-tab-rail'),
   terminalTabs: $('#terminal-tabs'),
   tabNewBtn: $('#tab-new-btn'),
+  btnToggleTerminalTabRail: $('#btn-toggle-terminal-tab-rail'),
   btnVsCode: $('#btn-vscode'),
   btnExplorer: $('#btn-explorer'),
   btnAndroidStudio: $('#btn-android-studio'),
@@ -81,6 +85,7 @@ const dom = {
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
+const TERMINAL_TAB_RAIL_COLLAPSED_KEY = 'codingspace.terminalTabRailCollapsed';
 
 // ── Window Controls ────────────────────────────────────
 dom.btnMinimize.addEventListener('click', () => window.api.minimize());
@@ -90,13 +95,26 @@ dom.btnClose.addEventListener('click', () => window.api.close());
 // ── Option Toggles ─────────────────────────────────────
 dom.toggleExternalWt.addEventListener('change', (e) => {
   state.useExternalWt = e.target.checked;
+  if (state.useExternalWt) {
+    clearHiddenToolStandbys();
+  } else {
+    const { wtPath, wtName } = getActiveWorktreeInfo();
+    ensureWarmToolStandbysForWorktree(wtPath, wtName);
+  }
 });
 dom.toggleTmux.addEventListener('change', (e) => {
   state.useTmux = e.target.checked;
+  clearHiddenToolStandbys();
+  const { wtPath, wtName } = getActiveWorktreeInfo();
+  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 });
 
 dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
   setWorkspaceSidebarCollapsed(!state.workspaceSidebarCollapsed);
+});
+
+dom.btnToggleTerminalTabRail.addEventListener('click', () => {
+  setTerminalTabRailCollapsed(!state.terminalTabRailCollapsed);
 });
 
 // ── Add Project ────────────────────────────────────────
@@ -203,17 +221,46 @@ const icons = {
   gitFork: iconSvg(iconRaw.gitFork, 14),
   chevron: iconSvg(iconRaw.chevron, 10),
   close: iconSvg(iconRaw.close, 8),
-  opencode: iconSvg(iconRaw.opencode, 12),
-  gemini: iconSvg(iconRaw.gemini, 12),
+  opencode: iconSvg(iconRaw.opencode, 16),
+  gemini: iconSvg(iconRaw.gemini, 16),
   android: iconSvg(iconRaw.android, 12),
   antigravity: iconSvg(iconRaw.antigravity, 12),
+};
+
+const TOOL_SPECS = {
+  opencode: {
+    key: 'opencode',
+    label: 'OpenCode',
+    command: 'opencode',
+    icon: 'opencode',
+  },
+  gemini: {
+    key: 'gemini',
+    label: 'Gemini',
+    command: 'gemini',
+    icon: 'gemini',
+  },
+};
+
+const TOOL_WARM_READY_DELAY_MS = {
+  tmux: 900,
+  plain: 550,
 };
 
 // ═══════════════════════════════════════════════════════
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
 
-async function createTerminal(cwd, name, { useTmux = false, sessionName = '', worktreePath = '' } = {}) {
+async function createTerminal(cwd, name, {
+  useTmux = false,
+  sessionName = '',
+  worktreePath = '',
+  visible = true,
+  activate = true,
+  toolKey = '',
+  toolIcon = 'terminal',
+  isStandby = false,
+} = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
 
@@ -282,7 +329,7 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
 
   // Store terminal info (with worktree association)
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, visible, toolKey, toolIcon, isStandby,
     cleanup: () => {
       cleanupData();
       cleanupExit();
@@ -291,12 +338,15 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
     },
   });
 
-  // Switch worktree context to this terminal's worktree, then create tab
-  state.activeWorktreePath = wtPath;
-  rebuildTabsForWorktree(wtPath);
+  if (visible) {
+    // Switch worktree context to this terminal's worktree, then create tab
+    state.activeWorktreePath = wtPath;
+    rebuildTabsForWorktree(wtPath);
 
-  // Switch to this terminal
-  switchToTerminal(id);
+    if (activate) {
+      switchToTerminal(id);
+    }
+  }
 
   // Fit and send initial size, then optionally start tmux
   setTimeout(() => {
@@ -319,7 +369,7 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
 function getTerminalsForWorktree(wtPath) {
   const ids = [];
   for (const [id, info] of state.terminals) {
-    if (info.worktreePath === wtPath) ids.push(id);
+    if (info.worktreePath === wtPath && info.visible) ids.push(id);
   }
   return ids;
 }
@@ -339,20 +389,23 @@ function rebuildTabsForWorktree(wtPath) {
 
 /** Insert a single tab button into the tab bar */
 function insertTab(id, name) {
-  const tab = document.createElement('button');
+  const info = state.terminals.get(id);
+  const iconName = info?.toolIcon || 'terminal';
+  const iconMarkup = icons[iconName] || icons.terminal;
+  const tab = document.createElement('div');
   tab.className = 'terminal-tab';
   tab.dataset.termId = id;
   tab.innerHTML = `
-    <span class="terminal-tab-icon">${icons.terminal}</span>
-    <span class="terminal-tab-name">${esc(name)}</span>
-    <button class="terminal-tab-close" data-close-term="${id}" title="Close">${icons.close}</button>
+    <button class="terminal-tab-main" type="button" role="tab" aria-selected="false" title="${esc(name)}" aria-label="Switch to terminal ${esc(name)}">
+      <span class="terminal-tab-icon">${iconMarkup}</span>
+      <span class="terminal-tab-name">${esc(name)}</span>
+    </button>
+    <button class="terminal-tab-close" type="button" data-close-term="${id}" title="Close ${esc(name)}" aria-label="Close ${esc(name)}">${icons.close}</button>
   `;
-  // Insert before the + button
-  dom.terminalTabs.insertBefore(tab, dom.tabNewBtn);
+  dom.terminalTabs.appendChild(tab);
 
   // Switch on click
-  tab.addEventListener('click', (e) => {
-    if (e.target.closest('.terminal-tab-close')) return;
+  tab.querySelector('.terminal-tab-main').addEventListener('click', () => {
     switchToTerminal(id);
   });
 
@@ -361,6 +414,7 @@ function insertTab(id, name) {
     e.stopPropagation();
     closeTerminal(id);
   });
+
 }
 
 /** Switch the active worktree context (swap tab bar + restore last active terminal) */
@@ -396,11 +450,17 @@ function switchWorktreeContext(wtPath) {
   }
 
   updateSidebarActiveState();
+  const { wtName } = getActiveWorktreeInfo();
+  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 }
 
 function switchToTerminal(id) {
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
+
+  if (!termInfo.visible) {
+    revealTerminal(id);
+  }
 
   state.activeTerminalId = id;
 
@@ -415,7 +475,9 @@ function switchToTerminal(id) {
 
   // Update tab active state
   dom.terminalTabs.querySelectorAll('.terminal-tab').forEach((t) => {
-    t.classList.toggle('active', t.dataset.termId === id);
+    const active = t.dataset.termId === id;
+    t.classList.toggle('active', active);
+    t.querySelector('.terminal-tab-main')?.setAttribute('aria-selected', String(active));
   });
 
   // Update pane visibility — show only panes for current worktree context
@@ -437,6 +499,20 @@ function switchToTerminal(id) {
   updateSidebarActiveState();
 }
 
+function revealTerminal(id, { name } = {}) {
+  const termInfo = state.terminals.get(id);
+  if (!termInfo || termInfo.visible) return;
+
+  if (name) {
+    termInfo.name = name;
+  }
+
+  termInfo.visible = true;
+  termInfo.isStandby = false;
+  state.activeWorktreePath = termInfo.worktreePath;
+  rebuildTabsForWorktree(termInfo.worktreePath);
+}
+
 function closeTerminal(id) {
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
@@ -455,6 +531,7 @@ function closeTerminal(id) {
   const tab = dom.terminalTabs.querySelector(`[data-term-id="${id}"]`);
   if (tab) tab.remove();
 
+  removeStandbyByTerminalId(id);
   state.terminals.delete(id);
 
   // Clean up worktree active tracking
@@ -555,6 +632,70 @@ function setWorkspaceSidebarCollapsed(collapsed, { persist = true } = {}) {
   }, 360);
 }
 
+function loadTerminalTabRailCollapsed() {
+  try {
+    const val = localStorage.getItem(TERMINAL_TAB_RAIL_COLLAPSED_KEY);
+    return val === null ? false : val === 'true';
+  } catch (error) {
+    console.warn('Failed to read terminal tab rail preference:', error.message);
+    return false;
+  }
+}
+
+function saveTerminalTabRailCollapsed(collapsed) {
+  try {
+    localStorage.setItem(TERMINAL_TAB_RAIL_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+  } catch (error) {
+    console.warn('Failed to save terminal tab rail preference:', error.message);
+  }
+}
+
+function setTerminalTabRailCollapsed(collapsed, { persist = true } = {}) {
+  state.terminalTabRailCollapsed = collapsed;
+
+  if (
+    collapsed &&
+    dom.terminalTabRail.contains(document.activeElement) &&
+    document.activeElement !== dom.btnToggleTerminalTabRail &&
+    document.activeElement !== dom.tabNewBtn
+  ) {
+    dom.btnToggleTerminalTabRail.focus();
+  }
+
+  dom.terminalTabRail.classList.toggle('terminal-tab-rail-collapsed', collapsed);
+  dom.btnToggleTerminalTabRail.setAttribute('aria-expanded', String(!collapsed));
+
+  const label = collapsed ? 'Expand terminal tab rail' : 'Collapse terminal tab rail';
+  dom.btnToggleTerminalTabRail.setAttribute('aria-label', label);
+  dom.btnToggleTerminalTabRail.title = label;
+
+  if (persist) {
+    saveTerminalTabRailCollapsed(collapsed);
+  }
+
+  fitActiveTerminal();
+
+  let transitionHandled = false;
+  const handleTransitionEnd = (event) => {
+    if (event.target !== dom.terminalTabRail || event.propertyName !== 'width') {
+      return;
+    }
+
+    transitionHandled = true;
+    dom.terminalTabRail.removeEventListener('transitionend', handleTransitionEnd);
+    fitActiveTerminal();
+  };
+
+  dom.terminalTabRail.addEventListener('transitionend', handleTransitionEnd);
+
+  window.setTimeout(() => {
+    dom.terminalTabRail.removeEventListener('transitionend', handleTransitionEnd);
+    if (!transitionHandled) {
+      fitActiveTerminal();
+    }
+  }, 360);
+}
+
 // Resize all terminals on window resize
 window.addEventListener('resize', () => fitActiveTerminal());
 
@@ -573,6 +714,164 @@ function getActiveWorktreeInfo() {
   return { wtPath, wtName };
 }
 
+function getToolStandbyKey({ worktreePath, toolKey, useTmux }) {
+  return `${worktreePath}::${toolKey}::${useTmux ? 'tmux' : 'plain'}`;
+}
+
+function hasKnownWorktreePath(wtPath) {
+  return state.projects.some((project) => (project.worktrees || []).some((wt) => wt.path === wtPath));
+}
+
+function createToolSessionName(wtName, toolKey) {
+  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
+  const uniqueId = Date.now();
+  return `${safeName}_${toolKey}_${uniqueId}`;
+}
+
+function getToolTabLabel(toolSpec, wtName, useTmux) {
+  const tmuxLabel = useTmux ? 'tmux+' : '';
+  return `${tmuxLabel}${toolSpec.label}: ${wtName}`;
+}
+
+function removeStandbyByTerminalId(terminalId) {
+  for (const [key, entry] of state.toolStandbys) {
+    if (entry.terminalId === terminalId) {
+      if (entry.launchTimer) {
+        clearTimeout(entry.launchTimer);
+      }
+      if (entry.readyTimer) {
+        clearTimeout(entry.readyTimer);
+      }
+      state.toolStandbys.delete(key);
+      return entry;
+    }
+  }
+  return null;
+}
+
+async function spawnWarmToolStandby(toolSpec, { wtPath, wtName, useTmux }) {
+  if (!wtPath || state.useExternalWt) return null;
+
+  const standbyKey = getToolStandbyKey({ worktreePath: wtPath, toolKey: toolSpec.key, useTmux });
+  const existing = state.toolStandbys.get(standbyKey);
+  if (existing && (existing.state === 'warming' || existing.state === 'ready')) {
+    return existing;
+  }
+
+  const entry = {
+    key: standbyKey,
+    toolKey: toolSpec.key,
+    terminalId: null,
+    state: 'warming',
+    useTmux,
+    worktreePath: wtPath,
+    launchTimer: null,
+    readyTimer: null,
+  };
+  state.toolStandbys.set(standbyKey, entry);
+
+  const terminalId = await createTerminal(wtPath, getToolTabLabel(toolSpec, wtName, useTmux), {
+    useTmux,
+    sessionName: createToolSessionName(wtName, toolSpec.key),
+    worktreePath: wtPath,
+    visible: false,
+    activate: false,
+    toolKey: toolSpec.key,
+    toolIcon: toolSpec.icon,
+    isStandby: true,
+  });
+
+  if (!terminalId) {
+    state.toolStandbys.delete(standbyKey);
+    return null;
+  }
+
+  entry.terminalId = terminalId;
+
+  entry.launchTimer = setTimeout(() => {
+    const current = state.toolStandbys.get(standbyKey);
+    const info = state.terminals.get(terminalId);
+    if (!current || current.terminalId !== terminalId || current.state !== 'warming' || !info) {
+      return;
+    }
+
+    window.api.ptyWrite(terminalId, `${toolSpec.command}\r`);
+    current.launchTimer = null;
+  }, useTmux ? 800 : 500);
+
+  entry.readyTimer = setTimeout(() => {
+    const current = state.toolStandbys.get(standbyKey);
+    if (current && current.terminalId === terminalId && current.state === 'warming') {
+      current.state = 'ready';
+      current.readyTimer = null;
+    }
+  }, useTmux ? TOOL_WARM_READY_DELAY_MS.tmux : TOOL_WARM_READY_DELAY_MS.plain);
+
+  return entry;
+}
+
+function consumeWarmToolStandby(toolSpec, { wtPath, useTmux }) {
+  const standbyKey = getToolStandbyKey({ worktreePath: wtPath, toolKey: toolSpec.key, useTmux });
+  const entry = state.toolStandbys.get(standbyKey);
+  if (!entry || entry.state !== 'ready' || !entry.terminalId || !state.terminals.has(entry.terminalId)) {
+    return null;
+  }
+
+  entry.state = 'claimed';
+  if (entry.launchTimer) {
+    clearTimeout(entry.launchTimer);
+  }
+  if (entry.readyTimer) {
+    clearTimeout(entry.readyTimer);
+  }
+  state.toolStandbys.delete(standbyKey);
+  return entry.terminalId;
+}
+
+function ensureWarmToolStandbysForWorktree(wtPath, wtName) {
+  if (!wtPath || state.useExternalWt || !hasKnownWorktreePath(wtPath)) return;
+  Object.values(TOOL_SPECS).forEach((toolSpec) => {
+    spawnWarmToolStandby(toolSpec, { wtPath, wtName, useTmux: state.useTmux });
+  });
+}
+
+function clearHiddenToolStandbys() {
+  const standbyIds = [];
+  for (const entry of state.toolStandbys.values()) {
+    if (entry.launchTimer) {
+      clearTimeout(entry.launchTimer);
+    }
+    if (entry.readyTimer) {
+      clearTimeout(entry.readyTimer);
+    }
+    if (entry.terminalId) {
+      standbyIds.push(entry.terminalId);
+    }
+  }
+
+  state.toolStandbys.clear();
+  standbyIds.forEach((terminalId) => closeTerminal(terminalId));
+}
+
+function cleanupStaleToolStandbys() {
+  const staleTerminalIds = [];
+  for (const entry of state.toolStandbys.values()) {
+    if (!hasKnownWorktreePath(entry.worktreePath)) {
+      if (entry.launchTimer) {
+        clearTimeout(entry.launchTimer);
+      }
+      if (entry.readyTimer) {
+        clearTimeout(entry.readyTimer);
+      }
+      if (entry.terminalId) {
+        staleTerminalIds.push(entry.terminalId);
+      }
+    }
+  }
+
+  staleTerminalIds.forEach((terminalId) => closeTerminal(terminalId));
+}
+
 function createNewTerminalTab() {
   const { wtPath, wtName } = getActiveWorktreeInfo();
   const count = getTerminalsForWorktree(wtPath).length + 1;
@@ -581,44 +880,59 @@ function createNewTerminalTab() {
     sessionName: `${wtName.replace(/[^a-zA-Z0-9]/g, '_')}_${count}`,
     worktreePath: wtPath,
   });
+  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 }
 
-function createToolTab(toolName, command, { useTmux = false } = {}) {
+function createToolTab(toolKey, { useTmux = false } = {}) {
   const { wtPath, wtName } = getActiveWorktreeInfo();
-  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
-  const tmuxLabel = useTmux ? 'tmux+' : '';
-  const tabLabel = `${tmuxLabel}${toolName}: ${wtName}`;
+  const toolSpec = TOOL_SPECS[toolKey];
+  if (!toolSpec) return;
+
+  const tabLabel = getToolTabLabel(toolSpec, wtName, useTmux);
+  const warmTerminalId = consumeWarmToolStandby(toolSpec, { wtPath, useTmux });
+
+  if (warmTerminalId) {
+    const info = state.terminals.get(warmTerminalId);
+    if (info) {
+      info.name = tabLabel;
+      revealTerminal(warmTerminalId, { name: tabLabel });
+      switchToTerminal(warmTerminalId);
+      ensureWarmToolStandbysForWorktree(wtPath, wtName);
+      return;
+    }
+  }
 
   if (useTmux) {
-    // Create terminal with tmux, then send the tool command after tmux is ready
-    // Use a unique counter to avoid attaching to an existing tmux session
-    // that already has the tool running (which would send the command into the running tool)
-    const uniqueId = Date.now();
-    const sessionName = `${safeName}_${toolName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${uniqueId}`;
     createTerminal(wtPath, tabLabel, {
       useTmux: true,
-      sessionName,
+      sessionName: createToolSessionName(wtName, toolSpec.key),
       worktreePath: wtPath,
+      toolKey: toolSpec.key,
+      toolIcon: toolSpec.icon,
     }).then((id) => {
-      if (id && command) {
+      if (id && toolSpec.command) {
         // tmux starts at ~400ms (100ms shell + 300ms tmux), tool needs extra wait
         setTimeout(() => {
-          window.api.ptyWrite(id, `${command}\r`);
+          window.api.ptyWrite(id, `${toolSpec.command}\r`);
         }, 800);
       }
+      ensureWarmToolStandbysForWorktree(wtPath, wtName);
     });
   } else {
     // Create a plain terminal and then write the launch command
     createTerminal(wtPath, tabLabel, {
       useTmux: false,
       worktreePath: wtPath,
+      toolKey: toolSpec.key,
+      toolIcon: toolSpec.icon,
     }).then((id) => {
-      if (id && command) {
+      if (id && toolSpec.command) {
         // Wait for shell to be ready, then launch the tool
         setTimeout(() => {
-          window.api.ptyWrite(id, `${command}\r`);
+          window.api.ptyWrite(id, `${toolSpec.command}\r`);
         }, 500);
       }
+      ensureWarmToolStandbysForWorktree(wtPath, wtName);
     });
   }
 }
@@ -655,9 +969,18 @@ function showTabDropdown() {
 
   // Position relative to the + button
   const btnRect = dom.tabNewBtn.getBoundingClientRect();
-  dropdown.style.left = `${btnRect.left}px`;
-  dropdown.style.top = `${btnRect.bottom + 4}px`;
   document.body.appendChild(dropdown);
+  const dropdownRect = dropdown.getBoundingClientRect();
+  const railExpanded = !state.terminalTabRailCollapsed;
+  const left = railExpanded
+    ? btnRect.right + 8
+    : btnRect.left;
+  const maxLeft = window.innerWidth - dropdownRect.width - 8;
+  const top = railExpanded
+    ? Math.min(btnRect.top, window.innerHeight - dropdownRect.height - 8)
+    : Math.min(btnRect.bottom + 6, window.innerHeight - dropdownRect.height - 8);
+  dropdown.style.left = `${Math.max(8, Math.min(left, maxLeft))}px`;
+  dropdown.style.top = `${Math.max(48, top)}px`;
 
   // Force reflow for animation
   dropdown.offsetHeight;
@@ -675,10 +998,10 @@ function showTabDropdown() {
         createNewTerminalTab();
         break;
       case 'new-opencode':
-        createToolTab('OpenCode', 'opencode', { useTmux: state.useTmux });
+        createToolTab('opencode', { useTmux: state.useTmux });
         break;
       case 'new-gemini':
-        createToolTab('Gemini', 'gemini', { useTmux: state.useTmux });
+        createToolTab('gemini', { useTmux: state.useTmux });
         break;
     }
   });
@@ -760,6 +1083,7 @@ async function loadWorkspaces() {
   if (state.expandedProjects.size === 0) {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
   }
+  cleanupStaleToolStandbys();
   renderSidebar();
 }
 
@@ -905,6 +1229,7 @@ function attachSidebarProjectEvents(project) {
             sessionName: wtName.replace(/[^a-zA-Z0-9]/g, '_'),
             worktreePath: wtPath,
           });
+          ensureWarmToolStandbysForWorktree(wtPath, wtName);
         }
       }
     });
@@ -1256,5 +1581,6 @@ function esc(str) {
 // ── Initialize ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setWorkspaceSidebarCollapsed(loadWorkspaceSidebarCollapsed(), { persist: false });
+  setTerminalTabRailCollapsed(loadTerminalTabRailCollapsed(), { persist: false });
   loadWorkspaces();
 });

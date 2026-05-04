@@ -73,24 +73,42 @@
 
     <!-- ═══ Center — Terminal Area ═══ -->
     <main id="terminal-area">
-      <!-- Tab bar for multiple terminals -->
-      <div id="terminal-tabs" class="terminal-tabs">
-        <!-- Tabs injected dynamically -->
-        <button class="tab-new-btn" id="tab-new-btn" title="New terminal">
-          <img src="icons/plus.svg" width="12" height="12" alt="" />
-        </button>
-      </div>
-
-      <!-- Terminal container (xterm renders here) -->
-      <div id="terminal-container" class="terminal-container">
-        <!-- Welcome screen (shown when no terminal is active) -->
-        <div id="terminal-welcome" class="terminal-welcome">
-          <div class="welcome-glow"></div>
-          <div class="welcome-icon">
-            <img src="icons/terminal.svg" width="48" height="48" alt="" />
+      <div id="terminal-layout" class="terminal-layout">
+        <!-- Vertical tab rail for multiple terminals -->
+        <aside id="terminal-tab-rail" class="terminal-tab-rail" aria-label="Terminal tabs">
+          <div class="terminal-tab-rail-header">
+            <button class="tab-new-btn" id="tab-new-btn" type="button" title="New terminal" aria-label="New terminal">
+              <img src="icons/plus.svg" width="12" height="12" alt="" />
+              <span class="tab-new-label">Add</span>
+            </button>
+            <button
+              class="terminal-tab-rail-toggle"
+              id="btn-toggle-terminal-tab-rail"
+              type="button"
+              title="Collapse terminal tab rail"
+              aria-label="Collapse terminal tab rail"
+              aria-controls="terminal-tab-rail"
+              aria-expanded="true"
+            >
+              <img src="icons/chevron.svg" width="12" height="12" alt="" />
+            </button>
           </div>
-          <h2>Coding Space</h2>
+          <div id="terminal-tabs" class="terminal-tabs" role="tablist" aria-label="Open terminals">
+            <!-- Tabs injected dynamically -->
+          </div>
+        </aside>
 
+        <!-- Terminal container (xterm renders here) -->
+        <div id="terminal-container" class="terminal-container">
+          <!-- Welcome screen (shown when no terminal is active) -->
+          <div id="terminal-welcome" class="terminal-welcome">
+            <div class="welcome-glow"></div>
+            <div class="welcome-icon">
+              <img src="icons/terminal.svg" width="48" height="48" alt="" />
+            </div>
+            <h2>Coding Space</h2>
+
+          </div>
         </div>
       </div>
     </main>

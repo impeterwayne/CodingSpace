@@ -400,9 +400,16 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('add-worktree', async (_, { projectPath, branchName, wtPath }) => {
+  ipcMain.handle('add-worktree', async (_, { projectPath, branchName, wtPath, createBranch }) => {
     try {
-      const output = execSync(`git worktree add "${wtPath}" ${branchName}`, {
+      let cmd;
+      if (createBranch) {
+        // git worktree add -b <new-branch> <path>
+        cmd = `git worktree add -b "${branchName}" "${wtPath}"`;
+      } else {
+        cmd = `git worktree add "${wtPath}" ${branchName}`;
+      }
+      const output = execSync(cmd, {
         cwd: projectPath,
         encoding: 'utf-8',
         timeout: 30000,
@@ -436,6 +443,19 @@ app.whenReady().then(() => {
       return output.trim().split('\n').filter(Boolean);
     } catch (_) {
       return [];
+    }
+  });
+
+  ipcMain.handle('create-branch', async (_, { projectPath, branchName }) => {
+    try {
+      const output = execSync(`git branch "${branchName}"`, {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        timeout: 10000,
+      });
+      return { success: true, output: output.trim() };
+    } catch (e) {
+      return { success: false, error: e.stderr || e.message };
     }
   });
 });

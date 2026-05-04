@@ -1,5 +1,5 @@
 {
-  "name": "terminal-hq",
+  "name": "codingspace",
   "version": "1.0.0",
   "description": "Terminal workspace manager with git worktree and tmux support",
   "main": "src/main/main.js",

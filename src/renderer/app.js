@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   Terminal HQ — Renderer (Embedded Terminal + Sidebar)
+   Coding Space — Renderer (Embedded Terminal + Sidebar)
    ═══════════════════════════════════════════════════════ */
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
@@ -80,7 +80,7 @@ const dom = {
   workspaceSidebar: $('#workspace-sidebar'),
 };
 
-const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'terminal-hq.workspaceSidebarCollapsed';
+const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
 
 // ── Window Controls ────────────────────────────────────
 dom.btnMinimize.addEventListener('click', () => window.api.minimize());
@@ -792,6 +792,7 @@ function sidebarProjectHTML(project, index) {
           <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
         </div>
         <div class="sidebar-project-actions">
+          <button class="sidebar-icon-btn" data-action="create-branch" data-path="${esc(project.path)}" title="Create branch">${icons.gitBranch}</button>
           <button class="sidebar-icon-btn" data-action="add-wt" data-path="${esc(project.path)}" title="Add worktree">${icons.plus}</button>
           <button class="sidebar-icon-btn" data-action="fetch" data-path="${esc(project.path)}" title="Fetch">${icons.download}</button>
           <button class="sidebar-icon-btn danger" data-action="remove" data-path="${esc(project.path)}" title="Remove">${icons.trash}</button>
@@ -848,6 +849,11 @@ function attachSidebarProjectEvents(project) {
       wtList.classList.remove('collapsed');
       wtList.style.maxHeight = wtList.scrollHeight + 'px';
     }
+  });
+
+  el.querySelector('[data-action="create-branch"]')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showCreateBranchModal(project);
   });
 
   el.querySelector('[data-action="add-wt"]')?.addEventListener('click', (e) => {
@@ -938,6 +944,211 @@ async function loadGitInfo(wt) {
   } catch (_) {}
 }
 
+// ── Branch name → PascalCase path helper ───────────────
+function branchToPascalPath(branch) {
+  if (!branch) return '';
+  const shortName = branch.includes('/') ? branch.substring(branch.lastIndexOf('/') + 1) : branch;
+  return shortName
+    .split(/[-\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join('');
+}
+
+// ── Searchable Branch Dropdown (reusable) ──────────────
+function setupBranchCombo({ containerEl, branches, onSelect, placeholder = 'Search branches...', showCreateOption = false }) {
+  const branchInput = containerEl.querySelector('.branch-combo-input');
+  const branchDropdown = containerEl.querySelector('.branch-combo-dropdown');
+  const branchSelected = containerEl.querySelector('.branch-combo-selected');
+  const branchChipLabel = containerEl.querySelector('.branch-chip-label');
+  const branchChipBadge = containerEl.querySelector('.branch-chip-badge');
+  const branchChipRemove = containerEl.querySelector('.branch-chip-remove');
+
+  branchInput.placeholder = placeholder;
+  let selectedBranch = '';
+  let isCreateNew = false;
+
+  function select(name, createNew) {
+    selectedBranch = name;
+    isCreateNew = createNew;
+    branchChipLabel.textContent = name;
+    if (createNew) {
+      branchChipBadge.textContent = 'new';
+      branchChipBadge.className = 'branch-chip-badge new';
+    } else {
+      branchChipBadge.textContent = '';
+      branchChipBadge.className = 'branch-chip-badge existing';
+      branchChipBadge.style.display = 'none';
+    }
+    branchSelected.style.display = '';
+    branchInput.style.display = 'none';
+    branchInput.value = '';
+    hideDropdown();
+    if (onSelect) onSelect(name, createNew);
+  }
+
+  function clear() {
+    selectedBranch = '';
+    isCreateNew = false;
+    branchSelected.style.display = 'none';
+    branchInput.style.display = '';
+    branchInput.value = '';
+    branchInput.focus();
+    if (onSelect) onSelect('', false);
+  }
+
+  function renderDropdown(query) {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? branches.filter((b) => b.toLowerCase().includes(q))
+      : branches;
+    const exactMatch = branches.some((b) => b.toLowerCase() === q);
+    const showCreate = showCreateOption && q.length > 0 && !exactMatch;
+
+    let html = '';
+
+    if (showCreate) {
+      html += `
+        <button class="branch-dropdown-item create-item" data-action="create" data-branch="${esc(query.trim())}" type="button">
+          <span class="branch-dropdown-icon create">${icons.plus}</span>
+          <span>Create new branch: <strong>${esc(query.trim())}</strong></span>
+        </button>
+      `;
+      if (filtered.length > 0) {
+        html += `<div class="branch-dropdown-divider"></div>`;
+      }
+    }
+
+    if (filtered.length > 0) {
+      for (const b of filtered.slice(0, 20)) {
+        const idx = b.toLowerCase().indexOf(q);
+        let label;
+        if (q && idx >= 0) {
+          label = esc(b.substring(0, idx))
+            + `<mark>${esc(b.substring(idx, idx + q.length))}</mark>`
+            + esc(b.substring(idx + q.length));
+        } else {
+          label = esc(b);
+        }
+        html += `
+          <button class="branch-dropdown-item" data-action="select" data-branch="${esc(b)}" type="button">
+            <span class="branch-dropdown-icon">${icons.gitBranch}</span>
+            <span>${label}</span>
+          </button>
+        `;
+      }
+      if (filtered.length > 20) {
+        html += `<div class="branch-dropdown-more">${filtered.length - 20} more...</div>`;
+      }
+    } else if (!showCreate) {
+      html += `<div class="branch-dropdown-empty">No branches found</div>`;
+    }
+
+    branchDropdown.innerHTML = html;
+    branchDropdown.classList.add('visible');
+
+    branchDropdown.querySelectorAll('.branch-dropdown-item').forEach((item) => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const action = item.dataset.action;
+        const branch = item.dataset.branch;
+        select(branch, action === 'create');
+      });
+    });
+  }
+
+  function hideDropdown() {
+    branchDropdown.classList.remove('visible');
+  }
+
+  branchInput.addEventListener('input', () => renderDropdown(branchInput.value));
+  branchInput.addEventListener('focus', () => renderDropdown(branchInput.value));
+  branchInput.addEventListener('blur', () => setTimeout(() => hideDropdown(), 150));
+  branchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { hideDropdown(); branchInput.blur(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = branchDropdown.querySelector('.branch-dropdown-item');
+      if (first) first.click();
+    }
+  });
+  branchChipRemove.addEventListener('click', clear);
+
+  return {
+    getSelected: () => ({ branch: selectedBranch, isNew: isCreateNew }),
+    focus: () => branchInput.focus(),
+  };
+}
+
+/** Generate the branch combo HTML (reusable in both modals) */
+function branchComboHTML() {
+  return `
+    <div class="branch-combo">
+      <div class="branch-combo-selected" style="display:none;">
+        <span class="branch-chip">
+          <span class="branch-chip-icon">${icons.gitBranch}</span>
+          <span class="branch-chip-label"></span>
+          <span class="branch-chip-badge"></span>
+          <button class="branch-chip-remove" type="button">${icons.close}</button>
+        </span>
+      </div>
+      <input class="form-input branch-combo-input" autocomplete="off" spellcheck="false" />
+      <div class="branch-combo-dropdown"></div>
+    </div>
+  `;
+}
+
+// ── Create Branch Modal ────────────────────────────────
+async function showCreateBranchModal(project) {
+  dom.modalTitle.textContent = 'Create Branch';
+
+  dom.modalBody.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">New Branch Name</label>
+      <input class="form-input" id="new-branch-name" placeholder="e.g. feature/my-feature" autocomplete="off" spellcheck="false" />
+    </div>
+    <p class="form-hint">Creates a new branch from the current HEAD. You can create a worktree for it later.</p>
+  `;
+
+  const nameInput = dom.modalBody.querySelector('#new-branch-name');
+
+  dom.modalFooter.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel">Cancel</button>
+    <button class="btn-primary" id="modal-confirm">${icons.gitBranch} Create Branch</button>
+  `;
+  showModal();
+  setTimeout(() => nameInput.focus(), 100);
+
+  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
+  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
+    const branchName = nameInput.value.trim();
+    if (!branchName) { showToast('Please enter a branch name', 'error'); return; }
+    if (/[\s~^:?*\[\\]/.test(branchName)) {
+      showToast('Invalid branch name', 'error');
+      return;
+    }
+    const btn = dom.modalFooter.querySelector('#modal-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating...';
+    const result = await window.api.createBranch({ projectPath: project.path, branchName });
+    if (result.success) {
+      showToast(`Branch created: ${branchName}`, 'success');
+      hideModal();
+    } else {
+      showToast(`Failed: ${result.error}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.gitBranch} Create Branch`;
+    }
+  });
+
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dom.modalFooter.querySelector('#modal-confirm').click();
+    }
+  });
+}
+
 // ── Add Worktree Modal ─────────────────────────────────
 async function showAddWorktreeModal(project) {
   dom.modalTitle.textContent = 'Add Worktree';
@@ -945,46 +1156,64 @@ async function showAddWorktreeModal(project) {
   const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
   const availableBranches = branches.filter((b) => !existingWtBranches.includes(b) && !b.startsWith('origin/'));
 
+  const worktreesDir = `${project.path}.worktrees`;
+
   dom.modalBody.innerHTML = `
     <div class="form-group">
       <label class="form-label">Branch</label>
-      <select class="form-select" id="wt-branch-select">
-        ${availableBranches.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}
-      </select>
+      ${branchComboHTML()}
     </div>
     <div class="form-group">
       <label class="form-label">Worktree Path</label>
-      <input class="form-input" id="wt-path-input" placeholder="e.g. ../my-project-feature" />
+      <input class="form-input" id="wt-path-input" />
     </div>
   `;
 
-  const branchSelect = dom.modalBody.querySelector('#wt-branch-select');
   const pathInput = dom.modalBody.querySelector('#wt-path-input');
-  const updatePath = () => {
-    const branch = branchSelect.value;
-    const parentDir = project.path.replace(/[/\\][^/\\]+$/, '');
-    pathInput.value = `${parentDir}\\${project.name}-${branch.replace(/\//g, '-')}`;
-  };
-  branchSelect.addEventListener('change', updatePath);
-  if (availableBranches.length) updatePath();
+  const comboContainer = dom.modalBody.querySelector('.branch-combo');
+
+  const combo = setupBranchCombo({
+    containerEl: comboContainer,
+    branches: availableBranches,
+    placeholder: 'Search or create a branch...',
+    showCreateOption: true,
+    onSelect: (branch) => {
+      if (branch) {
+        pathInput.value = `${worktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
+      } else {
+        pathInput.value = '';
+      }
+    },
+  });
 
   dom.modalFooter.innerHTML = `
     <button class="btn-secondary" id="modal-cancel">Cancel</button>
     <button class="btn-primary" id="modal-confirm">Create Worktree</button>
   `;
   showModal();
+  setTimeout(() => combo.focus(), 100);
 
   dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
   dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const branchName = branchSelect.value;
+    const { branch: selectedBranch, isNew } = combo.getSelected();
+    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
     const wtPath = pathInput.value;
-    if (!branchName || !wtPath) { showToast('Please fill all fields', 'error'); return; }
+    if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
+    if (isNew && /[\s~^:?*\[\\]/.test(selectedBranch)) {
+      showToast('Invalid branch name', 'error');
+      return;
+    }
     const btn = dom.modalFooter.querySelector('#modal-confirm');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Creating...';
-    const result = await window.api.addWorktree({ projectPath: project.path, branchName, wtPath });
+    const result = await window.api.addWorktree({
+      projectPath: project.path,
+      branchName: selectedBranch,
+      wtPath,
+      createBranch: isNew,
+    });
     if (result.success) {
-      showToast(`Worktree created: ${branchName}`, 'success');
+      showToast(`Worktree created: ${selectedBranch}`, 'success');
       hideModal();
       await window.api.refreshWorktrees(project.path);
       await loadWorkspaces();

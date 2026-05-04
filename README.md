@@ -1,51 +1,34 @@
-# Terminal HQ
+# Coding Space
 
-A premium Electron workspace manager for git worktree-based development workflows on Windows. Launch Windows Terminal with psmux for each worktree with a single click.
+My Coding Space
 
 ## Features
 
-- **Git Worktree Management** — Auto-detects all worktrees in your project
-- **Windows Terminal Integration** — Launch `wt.exe` with psmux (`psmux new-session -A -s <name>`) per workspace
-- **psmux Toggle** — Enable/disable psmux session auto-start globally
-- **Git Status Dashboard** — See branch, modified files, ahead/behind, and last commit at a glance
-- **Quick Actions** — Pull, fetch, open VS Code, or explore any worktree
-- **Worktree Creation** — Add new worktrees from available branches via modal
-- **Persistent Config** — Projects are saved and restored between sessions
+- **Git Worktree Management** — Auto-detects all worktrees in your project.
+- **Embedded Terminal** — Built-in `xterm.js` and `node-pty` terminal tabs.
+- **psmux Integration** — Automatically start psmux sessions inside the embedded terminal.
+- **Git Status Dashboard** — See branch, modified files, ahead/behind, and last commit at a glance.
+- **Quick Actions** — Open VS Code, Android Studio, Antigravity, or Windows Explorer with a single click.
+- **Quick Tools** — Launch tools like OpenCode and Gemini directly in terminal tabs.
+- **Persistent Config** — Projects are saved and restored between sessions.
 
 ## Getting Started
 
 ```bash
-cd terminal-hq
 npm install
 npm start
 ```
 
 ## Usage
 
-1. Click **Add Project** to select a git repository root
-2. All worktrees are displayed as cards with git status
-3. Click **Terminal** on any worktree to open Windows Terminal (with psmux if enabled)
-4. Use **Code** to open in VS Code, or **Pull** for quick git pull
+1. Click **Add Project** to select a git repository root.
+2. Select a worktree to view its integrated terminal.
+3. Use the **+** button in the terminal tab bar to open new terminals, OpenCode, or Gemini.
+4. Use quick action buttons to open the worktree in VS Code, Android Studio, or Antigravity.
 
 ## Requirements
 
 - Windows 10/11
-- [Windows Terminal](https://aka.ms/terminal) (`wt.exe` in PATH)
-- [psmux](https://github.com/psmux/psmux) (if using psmux toggle — native multiplexer for Windows)
+- Node.js & npm
 - Git
-
-## Project Structure
-
-```
-terminal-hq/
-├── src/
-│   ├── main/
-│   │   ├── main.js      # Electron main process
-│   │   └── preload.js    # Context bridge
-│   └── renderer/
-│       ├── index.html    # App shell
-│       ├── styles.css    # Dark premium design system
-│       └── app.js        # Renderer logic
-├── package.json
-└── .gitignore
-```
+- [psmux](https://github.com/psmux/psmux) (optional, for psmux integration)

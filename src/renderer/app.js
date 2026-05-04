@@ -36,6 +36,7 @@ const state = {
   projects: [],
   useExternalWt: false,
   useTmux: true,
+  workspaceSidebarCollapsed: false,
   expandedProjects: new Set(),
   terminals: new Map(),   // id -> { term, fitAddon, paneEl, name, cwd, worktreePath, cleanup }
   activeTerminalId: null,
@@ -56,6 +57,7 @@ const dom = {
   toggleExternalWt: $('#toggle-external-wt'),
   toggleTmux: $('#toggle-tmux'),
   projectsContainer: $('#projects-container'),
+  loadingState: $('#loading-state'),
   emptyState: $('#empty-state'),
   toastContainer: $('#toast-container'),
   modalOverlay: $('#modal-overlay'),
@@ -68,11 +70,17 @@ const dom = {
   terminalContainer: $('#terminal-container'),
   terminalTabs: $('#terminal-tabs'),
   tabNewBtn: $('#tab-new-btn'),
+  btnVsCode: $('#btn-vscode'),
+  btnExplorer: $('#btn-explorer'),
   btnAndroidStudio: $('#btn-android-studio'),
   btnAntigravity: $('#btn-antigravity'),
+  btnToggleWorkspaceSidebar: $('#btn-toggle-workspace-sidebar'),
   sidebarResizeHandle: $('#sidebar-resize-handle'),
   sidebar: $('#sidebar'),
+  workspaceSidebar: $('#workspace-sidebar'),
 };
+
+const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'terminal-hq.workspaceSidebarCollapsed';
 
 // ── Window Controls ────────────────────────────────────
 dom.btnMinimize.addEventListener('click', () => window.api.minimize());
@@ -85,6 +93,10 @@ dom.toggleExternalWt.addEventListener('change', (e) => {
 });
 dom.toggleTmux.addEventListener('change', (e) => {
   state.useTmux = e.target.checked;
+});
+
+dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
+  setWorkspaceSidebarCollapsed(!state.workspaceSidebarCollapsed);
 });
 
 // ── Add Project ────────────────────────────────────────
@@ -102,10 +114,13 @@ async function addProject() {
 
 // ── Refresh All ────────────────────────────────────────
 dom.btnRefreshAll.addEventListener('click', async () => {
+  const icon = dom.btnRefreshAll.querySelector('svg');
+  if (icon) icon.classList.add('spinning');
   showToast('Refreshing...', 'info');
   for (const p of state.projects) await window.api.refreshWorktrees(p.path);
   await loadWorkspaces();
   showToast('All projects refreshed', 'success');
+  if (icon) icon.classList.remove('spinning');
 });
 
 // ── Sidebar Resize ─────────────────────────────────────
@@ -468,6 +483,78 @@ function fitActiveTerminal() {
   }
 }
 
+function getRequiredActiveWorktreePath() {
+  if (!state.activeWorktreePath) {
+    showToast('Select a worktree first', 'info');
+    return null;
+  }
+
+  return state.activeWorktreePath;
+}
+
+function loadWorkspaceSidebarCollapsed() {
+  try {
+    const val = localStorage.getItem(WORKSPACE_SIDEBAR_COLLAPSED_KEY);
+    return val === null ? true : val === 'true';
+  } catch (error) {
+    console.warn('Failed to read workspace sidebar preference:', error.message);
+    return true;
+  }
+}
+
+function saveWorkspaceSidebarCollapsed(collapsed) {
+  try {
+    localStorage.setItem(WORKSPACE_SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+  } catch (error) {
+    console.warn('Failed to save workspace sidebar preference:', error.message);
+  }
+}
+
+function setWorkspaceSidebarCollapsed(collapsed, { persist = true } = {}) {
+  state.workspaceSidebarCollapsed = collapsed;
+
+  if (
+    collapsed &&
+    dom.workspaceSidebar.contains(document.activeElement) &&
+    document.activeElement !== dom.btnToggleWorkspaceSidebar
+  ) {
+    dom.btnToggleWorkspaceSidebar.focus();
+  }
+
+  dom.workspaceSidebar.classList.toggle('workspace-sidebar-collapsed', collapsed);
+  dom.btnToggleWorkspaceSidebar.setAttribute('aria-expanded', String(!collapsed));
+
+  const label = collapsed ? 'Expand workspace sidebar' : 'Collapse workspace sidebar';
+  dom.btnToggleWorkspaceSidebar.setAttribute('aria-label', label);
+  dom.btnToggleWorkspaceSidebar.title = label;
+
+  if (persist) {
+    saveWorkspaceSidebarCollapsed(collapsed);
+  }
+
+  fitActiveTerminal();
+
+  let transitionHandled = false;
+  const handleTransitionEnd = (event) => {
+    if (event.target !== dom.workspaceSidebar || event.propertyName !== 'width') {
+      return;
+    }
+
+    transitionHandled = true;
+    dom.workspaceSidebar.removeEventListener('transitionend', handleTransitionEnd);
+    fitActiveTerminal();
+  };
+
+  dom.workspaceSidebar.addEventListener('transitionend', handleTransitionEnd);
+
+  window.setTimeout(() => {
+    dom.workspaceSidebar.removeEventListener('transitionend', handleTransitionEnd);
+    if (!transitionHandled) {
+      fitActiveTerminal();
+    }
+  }, 360);
+}
+
 // Resize all terminals on window resize
 window.addEventListener('resize', () => fitActiveTerminal());
 
@@ -627,14 +714,30 @@ dom.tabNewBtn.addEventListener('click', (e) => {
 });
 
 // Tab bar external tool buttons
+dom.btnVsCode.addEventListener('click', () => {
+  const wtPath = getRequiredActiveWorktreePath();
+  if (!wtPath) return;
+  window.api.openInEditor(wtPath);
+  showToast('Opening VS Code...', 'info');
+});
+
+dom.btnExplorer.addEventListener('click', () => {
+  const wtPath = getRequiredActiveWorktreePath();
+  if (!wtPath) return;
+  window.api.openInExplorer(wtPath);
+  showToast('Opening Explorer...', 'info');
+});
+
 dom.btnAndroidStudio.addEventListener('click', () => {
-  const { wtPath } = getActiveWorktreeInfo();
+  const wtPath = getRequiredActiveWorktreePath();
+  if (!wtPath) return;
   window.api.openInAndroidStudio(wtPath);
   showToast('Opening Android Studio...', 'info');
 });
 
 dom.btnAntigravity.addEventListener('click', () => {
-  const { wtPath } = getActiveWorktreeInfo();
+  const wtPath = getRequiredActiveWorktreePath();
+  if (!wtPath) return;
   window.api.openInAntigravity(wtPath);
   showToast('Opening Antigravity...', 'info');
 });
@@ -644,7 +747,16 @@ dom.btnAntigravity.addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════
 
 async function loadWorkspaces() {
+  if (!state.projects || state.projects.length === 0) {
+    dom.projectsContainer.innerHTML = '';
+    dom.emptyState.style.display = 'none';
+    dom.loadingState.style.display = '';
+  }
+
   state.projects = (await window.api.getWorkspaces()) || [];
+  
+  dom.loadingState.style.display = 'none';
+
   if (state.expandedProjects.size === 0) {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
   }
@@ -703,10 +815,6 @@ function sidebarWtItemHTML(project, wt) {
         <div class="sidebar-wt-branch">${esc(wt.branch || (wt.detached ? 'HEAD detached' : wt.bare ? 'bare' : '...'))}</div>
       </div>
       <div class="sidebar-wt-actions">
-        <button class="sidebar-icon-btn" data-action="vscode" data-path="${esc(wt.path)}" title="VS Code">${icons.code}</button>
-        <button class="sidebar-icon-btn" data-action="android-studio" data-path="${esc(wt.path)}" title="Android Studio">${icons.android}</button>
-        <button class="sidebar-icon-btn" data-action="antigravity" data-path="${esc(wt.path)}" title="Antigravity">${icons.antigravity}</button>
-        <button class="sidebar-icon-btn" data-action="explorer" data-path="${esc(wt.path)}" title="Explorer">${icons.folder}</button>
       </div>
     </div>
   `;
@@ -918,5 +1026,6 @@ function esc(str) {
 
 // ── Initialize ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  setWorkspaceSidebarCollapsed(loadWorkspaceSidebarCollapsed(), { persist: false });
   loadWorkspaces();
 });

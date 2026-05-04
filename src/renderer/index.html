@@ -50,23 +50,14 @@
         </div>
       </div>
 
-      <div class="sidebar-option">
-        <label class="toggle-group">
-          <input type="checkbox" id="toggle-external-wt" />
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">External WT</span>
-        </label>
-        <label class="toggle-group">
-          <input type="checkbox" id="toggle-tmux" checked />
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Use tmux</span>
-        </label>
-      </div>
-
       <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
 
       <div id="sidebar-scroll">
         <div id="projects-container"></div>
+        <div id="loading-state" class="sidebar-empty">
+          <div class="spinner" style="width: 24px; height: 24px; border-width: 3px; margin-bottom: 8px;"></div>
+          <p>Loading projects...</p>
+        </div>
         <div id="empty-state" class="sidebar-empty" style="display:none;">
           <div class="empty-icon-sm">
             <img src="icons/folder-plus.svg" width="32" height="32" alt="" />
@@ -88,13 +79,6 @@
         <button class="tab-new-btn" id="tab-new-btn" title="New terminal">
           <img src="icons/plus.svg" width="12" height="12" alt="" />
         </button>
-        <div class="tab-bar-spacer"></div>
-        <button class="tab-bar-tool-btn" id="btn-android-studio" title="Open in Android Studio">
-          <img src="icons/android.svg" width="14" height="14" alt="" />
-        </button>
-        <button class="tab-bar-tool-btn" id="btn-antigravity" title="Open in Antigravity">
-          <img src="icons/antigravity.svg" width="14" height="14" alt="" />
-        </button>
       </div>
 
       <!-- Terminal container (xterm renders here) -->
@@ -110,6 +94,61 @@
         </div>
       </div>
     </main>
+
+    <aside id="workspace-sidebar">
+      <div class="workspace-sidebar-header">
+        <h2 class="sidebar-title">Workspace</h2>
+        <button
+          class="sidebar-icon-btn workspace-sidebar-toggle"
+          id="btn-toggle-workspace-sidebar"
+          type="button"
+          title="Collapse workspace sidebar"
+          aria-label="Collapse workspace sidebar"
+          aria-controls="workspace-sidebar"
+          aria-expanded="true"
+        >
+          <img src="icons/chevron.svg" width="12" height="12" alt="" />
+        </button>
+      </div>
+
+      <div class="workspace-sidebar-body">
+        <section class="workspace-section">
+          <h3 class="workspace-section-title">Launch Mode</h3>
+          <label class="workspace-toggle" title="Open worktrees in external Windows Terminal">
+            <input type="checkbox" id="toggle-external-wt" />
+            <span class="workspace-toggle-slider"></span>
+            <span class="workspace-toggle-label" data-label-expanded="External WT" data-label-collapsed="Ext">External WT</span>
+          </label>
+          <label class="workspace-toggle" title="Use tmux for new terminals">
+            <input type="checkbox" id="toggle-tmux" checked />
+            <span class="workspace-toggle-slider"></span>
+            <span class="workspace-toggle-label" data-label-expanded="Use tmux" data-label-collapsed="tmux">Use tmux</span>
+          </label>
+        </section>
+
+        <section class="workspace-section">
+          <h3 class="workspace-section-title">Open Active Worktree</h3>
+          <div class="workspace-tool-list">
+            <button class="workspace-tool-btn brand-logo-btn" id="btn-antigravity" title="Open in Antigravity" aria-label="Open in Antigravity">
+              <span class="workspace-tool-icon"><img src="icons/antigravity.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">Antigravity</span>
+            </button>
+            <button class="workspace-tool-btn brand-logo-btn" id="btn-android-studio" title="Open in Android Studio" aria-label="Open in Android Studio">
+              <span class="workspace-tool-icon"><img src="icons/android.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">Android Studio</span>
+            </button>
+            <button class="workspace-tool-btn brand-logo-btn" id="btn-vscode" title="Open in VS Code" aria-label="Open in VS Code">
+              <span class="workspace-tool-icon"><img src="icons/code.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">VS Code</span>
+            </button>
+            <button class="workspace-tool-btn brand-logo-btn" id="btn-explorer" title="Open in Explorer" aria-label="Open in Explorer">
+              <span class="workspace-tool-icon"><img src="icons/folder.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">Explorer</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </aside>
   </div>
 
   <!-- ─── Modal Overlay ───────────────────────── -->

@@ -1,0 +1,46 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  // ── Window controls ──
+  minimize: () => ipcRenderer.send('window:minimize'),
+  maximize: () => ipcRenderer.send('window:maximize'),
+  close: () => ipcRenderer.send('window:close'),
+
+  // ── Workspace management ──
+  getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
+  addProject: () => ipcRenderer.invoke('add-project'),
+  removeProject: (path) => ipcRenderer.invoke('remove-project', path),
+  refreshWorktrees: (path) => ipcRenderer.invoke('refresh-worktrees', path),
+  getGitInfo: (path) => ipcRenderer.invoke('get-git-info', path),
+  getRecentCommits: (path) => ipcRenderer.invoke('get-recent-commits', path),
+
+  // ── Launch actions ──
+  openWindowsTerminal: (opts) => ipcRenderer.invoke('open-wt', opts),
+  openInEditor: (path) => ipcRenderer.invoke('open-in-editor', path),
+  openInExplorer: (path) => ipcRenderer.invoke('open-in-explorer', path),
+  openInAndroidStudio: (path) => ipcRenderer.invoke('open-in-android-studio', path),
+  openInAntigravity: (path) => ipcRenderer.invoke('open-in-antigravity', path),
+
+  // ── Embedded terminal (PTY) ──
+  ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
+  ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
+  ptyResize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),
+  ptyKill: (id) => ipcRenderer.invoke('pty:kill', { id }),
+  onPtyData: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    ipcRenderer.on('pty:data', listener);
+    return () => ipcRenderer.removeListener('pty:data', listener);
+  },
+  onPtyExit: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    ipcRenderer.on('pty:exit', listener);
+    return () => ipcRenderer.removeListener('pty:exit', listener);
+  },
+
+  // ── Git operations ──
+  gitPull: (path) => ipcRenderer.invoke('git-pull', path),
+  gitFetch: (path) => ipcRenderer.invoke('git-fetch', path),
+  addWorktree: (opts) => ipcRenderer.invoke('add-worktree', opts),
+  removeWorktree: (opts) => ipcRenderer.invoke('remove-worktree', opts),
+  getBranches: (path) => ipcRenderer.invoke('get-branches', path),
+});

@@ -4,7 +4,6 @@
   "description": "Terminal workspace manager with git worktree and tmux support",
   "main": "src/main/main.js",
   "scripts": {
-    "test": "node --test",
     "build:renderer": "esbuild src/renderer/app.js --bundle --outfile=dist/renderer/app.bundle.js --platform=browser --format=iife --target=chrome120",
     "start": "npm run build:renderer && electron ."
   },

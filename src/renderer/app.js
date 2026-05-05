@@ -37,10 +37,8 @@ const state = {
   useExternalWt: false,
   useTmux: true,
   workspaceSidebarCollapsed: false,
-  terminalTabRailCollapsed: false,
   expandedProjects: new Set(),
   terminals: new Map(),   // id -> { term, fitAddon, paneEl, name, cwd, worktreePath, cleanup }
-  toolStandbys: new Map(),
   activeTerminalId: null,
   activeWorktreePath: null, // which worktree's tabs are currently shown
   worktreeActiveTerminal: new Map(), // worktreePath -> last active terminal id
@@ -70,10 +68,8 @@ const dom = {
   modalCloseBtn: $('#modal-close-btn'),
   terminalWelcome: $('#terminal-welcome'),
   terminalContainer: $('#terminal-container'),
-  terminalTabRail: $('#terminal-tab-rail'),
   terminalTabs: $('#terminal-tabs'),
   tabNewBtn: $('#tab-new-btn'),
-  btnToggleTerminalTabRail: $('#btn-toggle-terminal-tab-rail'),
   btnVsCode: $('#btn-vscode'),
   btnExplorer: $('#btn-explorer'),
   btnAndroidStudio: $('#btn-android-studio'),
@@ -85,7 +81,6 @@ const dom = {
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
-const TERMINAL_TAB_RAIL_COLLAPSED_KEY = 'codingspace.terminalTabRailCollapsed';
 
 // ── Window Controls ────────────────────────────────────
 dom.btnMinimize.addEventListener('click', () => window.api.minimize());
@@ -95,26 +90,13 @@ dom.btnClose.addEventListener('click', () => window.api.close());
 // ── Option Toggles ─────────────────────────────────────
 dom.toggleExternalWt.addEventListener('change', (e) => {
   state.useExternalWt = e.target.checked;
-  if (state.useExternalWt) {
-    clearHiddenToolStandbys();
-  } else {
-    const { wtPath, wtName } = getActiveWorktreeInfo();
-    ensureWarmToolStandbysForWorktree(wtPath, wtName);
-  }
 });
 dom.toggleTmux.addEventListener('change', (e) => {
   state.useTmux = e.target.checked;
-  clearHiddenToolStandbys();
-  const { wtPath, wtName } = getActiveWorktreeInfo();
-  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 });
 
 dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
   setWorkspaceSidebarCollapsed(!state.workspaceSidebarCollapsed);
-});
-
-dom.btnToggleTerminalTabRail.addEventListener('click', () => {
-  setTerminalTabRailCollapsed(!state.terminalTabRailCollapsed);
 });
 
 // ── Add Project ────────────────────────────────────────
@@ -221,46 +203,17 @@ const icons = {
   gitFork: iconSvg(iconRaw.gitFork, 14),
   chevron: iconSvg(iconRaw.chevron, 10),
   close: iconSvg(iconRaw.close, 8),
-  opencode: iconSvg(iconRaw.opencode, 16),
-  gemini: iconSvg(iconRaw.gemini, 16),
+  opencode: iconSvg(iconRaw.opencode, 12),
+  gemini: iconSvg(iconRaw.gemini, 12),
   android: iconSvg(iconRaw.android, 12),
   antigravity: iconSvg(iconRaw.antigravity, 12),
-};
-
-const TOOL_SPECS = {
-  opencode: {
-    key: 'opencode',
-    label: 'OpenCode',
-    command: 'opencode',
-    icon: 'opencode',
-  },
-  gemini: {
-    key: 'gemini',
-    label: 'Gemini',
-    command: 'gemini',
-    icon: 'gemini',
-  },
-};
-
-const TOOL_WARM_READY_DELAY_MS = {
-  tmux: 900,
-  plain: 550,
 };
 
 // ═══════════════════════════════════════════════════════
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
 
-async function createTerminal(cwd, name, {
-  useTmux = false,
-  sessionName = '',
-  worktreePath = '',
-  visible = true,
-  activate = true,
-  toolKey = '',
-  toolIcon = 'terminal',
-  isStandby = false,
-} = {}) {
+async function createTerminal(cwd, name, { useTmux = false, sessionName = '', worktreePath = '' } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
 
@@ -329,7 +282,7 @@ async function createTerminal(cwd, name, {
 
   // Store terminal info (with worktree association)
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, visible, toolKey, toolIcon, isStandby,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath,
     cleanup: () => {
       cleanupData();
       cleanupExit();
@@ -338,15 +291,12 @@ async function createTerminal(cwd, name, {
     },
   });
 
-  if (visible) {
-    // Switch worktree context to this terminal's worktree, then create tab
-    state.activeWorktreePath = wtPath;
-    rebuildTabsForWorktree(wtPath);
+  // Switch worktree context to this terminal's worktree, then create tab
+  state.activeWorktreePath = wtPath;
+  rebuildTabsForWorktree(wtPath);
 
-    if (activate) {
-      switchToTerminal(id);
-    }
-  }
+  // Switch to this terminal
+  switchToTerminal(id);
 
   // Fit and send initial size, then optionally start tmux
   setTimeout(() => {
@@ -369,7 +319,7 @@ async function createTerminal(cwd, name, {
 function getTerminalsForWorktree(wtPath) {
   const ids = [];
   for (const [id, info] of state.terminals) {
-    if (info.worktreePath === wtPath && info.visible) ids.push(id);
+    if (info.worktreePath === wtPath) ids.push(id);
   }
   return ids;
 }
@@ -389,23 +339,20 @@ function rebuildTabsForWorktree(wtPath) {
 
 /** Insert a single tab button into the tab bar */
 function insertTab(id, name) {
-  const info = state.terminals.get(id);
-  const iconName = info?.toolIcon || 'terminal';
-  const iconMarkup = icons[iconName] || icons.terminal;
-  const tab = document.createElement('div');
+  const tab = document.createElement('button');
   tab.className = 'terminal-tab';
   tab.dataset.termId = id;
   tab.innerHTML = `
-    <button class="terminal-tab-main" type="button" role="tab" aria-selected="false" title="${esc(name)}" aria-label="Switch to terminal ${esc(name)}">
-      <span class="terminal-tab-icon">${iconMarkup}</span>
-      <span class="terminal-tab-name">${esc(name)}</span>
-    </button>
-    <button class="terminal-tab-close" type="button" data-close-term="${id}" title="Close ${esc(name)}" aria-label="Close ${esc(name)}">${icons.close}</button>
+    <span class="terminal-tab-icon">${icons.terminal}</span>
+    <span class="terminal-tab-name">${esc(name)}</span>
+    <button class="terminal-tab-close" data-close-term="${id}" title="Close">${icons.close}</button>
   `;
-  dom.terminalTabs.appendChild(tab);
+  // Insert before the + button
+  dom.terminalTabs.insertBefore(tab, dom.tabNewBtn);
 
   // Switch on click
-  tab.querySelector('.terminal-tab-main').addEventListener('click', () => {
+  tab.addEventListener('click', (e) => {
+    if (e.target.closest('.terminal-tab-close')) return;
     switchToTerminal(id);
   });
 
@@ -414,7 +361,6 @@ function insertTab(id, name) {
     e.stopPropagation();
     closeTerminal(id);
   });
-
 }
 
 /** Switch the active worktree context (swap tab bar + restore last active terminal) */
@@ -450,17 +396,11 @@ function switchWorktreeContext(wtPath) {
   }
 
   updateSidebarActiveState();
-  const { wtName } = getActiveWorktreeInfo();
-  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 }
 
 function switchToTerminal(id) {
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
-
-  if (!termInfo.visible) {
-    revealTerminal(id);
-  }
 
   state.activeTerminalId = id;
 
@@ -475,9 +415,7 @@ function switchToTerminal(id) {
 
   // Update tab active state
   dom.terminalTabs.querySelectorAll('.terminal-tab').forEach((t) => {
-    const active = t.dataset.termId === id;
-    t.classList.toggle('active', active);
-    t.querySelector('.terminal-tab-main')?.setAttribute('aria-selected', String(active));
+    t.classList.toggle('active', t.dataset.termId === id);
   });
 
   // Update pane visibility — show only panes for current worktree context
@@ -499,20 +437,6 @@ function switchToTerminal(id) {
   updateSidebarActiveState();
 }
 
-function revealTerminal(id, { name } = {}) {
-  const termInfo = state.terminals.get(id);
-  if (!termInfo || termInfo.visible) return;
-
-  if (name) {
-    termInfo.name = name;
-  }
-
-  termInfo.visible = true;
-  termInfo.isStandby = false;
-  state.activeWorktreePath = termInfo.worktreePath;
-  rebuildTabsForWorktree(termInfo.worktreePath);
-}
-
 function closeTerminal(id) {
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
@@ -531,7 +455,6 @@ function closeTerminal(id) {
   const tab = dom.terminalTabs.querySelector(`[data-term-id="${id}"]`);
   if (tab) tab.remove();
 
-  removeStandbyByTerminalId(id);
   state.terminals.delete(id);
 
   // Clean up worktree active tracking
@@ -632,70 +555,6 @@ function setWorkspaceSidebarCollapsed(collapsed, { persist = true } = {}) {
   }, 360);
 }
 
-function loadTerminalTabRailCollapsed() {
-  try {
-    const val = localStorage.getItem(TERMINAL_TAB_RAIL_COLLAPSED_KEY);
-    return val === null ? false : val === 'true';
-  } catch (error) {
-    console.warn('Failed to read terminal tab rail preference:', error.message);
-    return false;
-  }
-}
-
-function saveTerminalTabRailCollapsed(collapsed) {
-  try {
-    localStorage.setItem(TERMINAL_TAB_RAIL_COLLAPSED_KEY, collapsed ? 'true' : 'false');
-  } catch (error) {
-    console.warn('Failed to save terminal tab rail preference:', error.message);
-  }
-}
-
-function setTerminalTabRailCollapsed(collapsed, { persist = true } = {}) {
-  state.terminalTabRailCollapsed = collapsed;
-
-  if (
-    collapsed &&
-    dom.terminalTabRail.contains(document.activeElement) &&
-    document.activeElement !== dom.btnToggleTerminalTabRail &&
-    document.activeElement !== dom.tabNewBtn
-  ) {
-    dom.btnToggleTerminalTabRail.focus();
-  }
-
-  dom.terminalTabRail.classList.toggle('terminal-tab-rail-collapsed', collapsed);
-  dom.btnToggleTerminalTabRail.setAttribute('aria-expanded', String(!collapsed));
-
-  const label = collapsed ? 'Expand terminal tab rail' : 'Collapse terminal tab rail';
-  dom.btnToggleTerminalTabRail.setAttribute('aria-label', label);
-  dom.btnToggleTerminalTabRail.title = label;
-
-  if (persist) {
-    saveTerminalTabRailCollapsed(collapsed);
-  }
-
-  fitActiveTerminal();
-
-  let transitionHandled = false;
-  const handleTransitionEnd = (event) => {
-    if (event.target !== dom.terminalTabRail || event.propertyName !== 'width') {
-      return;
-    }
-
-    transitionHandled = true;
-    dom.terminalTabRail.removeEventListener('transitionend', handleTransitionEnd);
-    fitActiveTerminal();
-  };
-
-  dom.terminalTabRail.addEventListener('transitionend', handleTransitionEnd);
-
-  window.setTimeout(() => {
-    dom.terminalTabRail.removeEventListener('transitionend', handleTransitionEnd);
-    if (!transitionHandled) {
-      fitActiveTerminal();
-    }
-  }, 360);
-}
-
 // Resize all terminals on window resize
 window.addEventListener('resize', () => fitActiveTerminal());
 
@@ -714,164 +573,6 @@ function getActiveWorktreeInfo() {
   return { wtPath, wtName };
 }
 
-function getToolStandbyKey({ worktreePath, toolKey, useTmux }) {
-  return `${worktreePath}::${toolKey}::${useTmux ? 'tmux' : 'plain'}`;
-}
-
-function hasKnownWorktreePath(wtPath) {
-  return state.projects.some((project) => (project.worktrees || []).some((wt) => wt.path === wtPath));
-}
-
-function createToolSessionName(wtName, toolKey) {
-  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
-  const uniqueId = Date.now();
-  return `${safeName}_${toolKey}_${uniqueId}`;
-}
-
-function getToolTabLabel(toolSpec, wtName, useTmux) {
-  const tmuxLabel = useTmux ? 'tmux+' : '';
-  return `${tmuxLabel}${toolSpec.label}: ${wtName}`;
-}
-
-function removeStandbyByTerminalId(terminalId) {
-  for (const [key, entry] of state.toolStandbys) {
-    if (entry.terminalId === terminalId) {
-      if (entry.launchTimer) {
-        clearTimeout(entry.launchTimer);
-      }
-      if (entry.readyTimer) {
-        clearTimeout(entry.readyTimer);
-      }
-      state.toolStandbys.delete(key);
-      return entry;
-    }
-  }
-  return null;
-}
-
-async function spawnWarmToolStandby(toolSpec, { wtPath, wtName, useTmux }) {
-  if (!wtPath || state.useExternalWt) return null;
-
-  const standbyKey = getToolStandbyKey({ worktreePath: wtPath, toolKey: toolSpec.key, useTmux });
-  const existing = state.toolStandbys.get(standbyKey);
-  if (existing && (existing.state === 'warming' || existing.state === 'ready')) {
-    return existing;
-  }
-
-  const entry = {
-    key: standbyKey,
-    toolKey: toolSpec.key,
-    terminalId: null,
-    state: 'warming',
-    useTmux,
-    worktreePath: wtPath,
-    launchTimer: null,
-    readyTimer: null,
-  };
-  state.toolStandbys.set(standbyKey, entry);
-
-  const terminalId = await createTerminal(wtPath, getToolTabLabel(toolSpec, wtName, useTmux), {
-    useTmux,
-    sessionName: createToolSessionName(wtName, toolSpec.key),
-    worktreePath: wtPath,
-    visible: false,
-    activate: false,
-    toolKey: toolSpec.key,
-    toolIcon: toolSpec.icon,
-    isStandby: true,
-  });
-
-  if (!terminalId) {
-    state.toolStandbys.delete(standbyKey);
-    return null;
-  }
-
-  entry.terminalId = terminalId;
-
-  entry.launchTimer = setTimeout(() => {
-    const current = state.toolStandbys.get(standbyKey);
-    const info = state.terminals.get(terminalId);
-    if (!current || current.terminalId !== terminalId || current.state !== 'warming' || !info) {
-      return;
-    }
-
-    window.api.ptyWrite(terminalId, `${toolSpec.command}\r`);
-    current.launchTimer = null;
-  }, useTmux ? 800 : 500);
-
-  entry.readyTimer = setTimeout(() => {
-    const current = state.toolStandbys.get(standbyKey);
-    if (current && current.terminalId === terminalId && current.state === 'warming') {
-      current.state = 'ready';
-      current.readyTimer = null;
-    }
-  }, useTmux ? TOOL_WARM_READY_DELAY_MS.tmux : TOOL_WARM_READY_DELAY_MS.plain);
-
-  return entry;
-}
-
-function consumeWarmToolStandby(toolSpec, { wtPath, useTmux }) {
-  const standbyKey = getToolStandbyKey({ worktreePath: wtPath, toolKey: toolSpec.key, useTmux });
-  const entry = state.toolStandbys.get(standbyKey);
-  if (!entry || entry.state !== 'ready' || !entry.terminalId || !state.terminals.has(entry.terminalId)) {
-    return null;
-  }
-
-  entry.state = 'claimed';
-  if (entry.launchTimer) {
-    clearTimeout(entry.launchTimer);
-  }
-  if (entry.readyTimer) {
-    clearTimeout(entry.readyTimer);
-  }
-  state.toolStandbys.delete(standbyKey);
-  return entry.terminalId;
-}
-
-function ensureWarmToolStandbysForWorktree(wtPath, wtName) {
-  if (!wtPath || state.useExternalWt || !hasKnownWorktreePath(wtPath)) return;
-  Object.values(TOOL_SPECS).forEach((toolSpec) => {
-    spawnWarmToolStandby(toolSpec, { wtPath, wtName, useTmux: state.useTmux });
-  });
-}
-
-function clearHiddenToolStandbys() {
-  const standbyIds = [];
-  for (const entry of state.toolStandbys.values()) {
-    if (entry.launchTimer) {
-      clearTimeout(entry.launchTimer);
-    }
-    if (entry.readyTimer) {
-      clearTimeout(entry.readyTimer);
-    }
-    if (entry.terminalId) {
-      standbyIds.push(entry.terminalId);
-    }
-  }
-
-  state.toolStandbys.clear();
-  standbyIds.forEach((terminalId) => closeTerminal(terminalId));
-}
-
-function cleanupStaleToolStandbys() {
-  const staleTerminalIds = [];
-  for (const entry of state.toolStandbys.values()) {
-    if (!hasKnownWorktreePath(entry.worktreePath)) {
-      if (entry.launchTimer) {
-        clearTimeout(entry.launchTimer);
-      }
-      if (entry.readyTimer) {
-        clearTimeout(entry.readyTimer);
-      }
-      if (entry.terminalId) {
-        staleTerminalIds.push(entry.terminalId);
-      }
-    }
-  }
-
-  staleTerminalIds.forEach((terminalId) => closeTerminal(terminalId));
-}
-
 function createNewTerminalTab() {
   const { wtPath, wtName } = getActiveWorktreeInfo();
   const count = getTerminalsForWorktree(wtPath).length + 1;
@@ -880,59 +581,44 @@ function createNewTerminalTab() {
     sessionName: `${wtName.replace(/[^a-zA-Z0-9]/g, '_')}_${count}`,
     worktreePath: wtPath,
   });
-  ensureWarmToolStandbysForWorktree(wtPath, wtName);
 }
 
-function createToolTab(toolKey, { useTmux = false } = {}) {
+function createToolTab(toolName, command, { useTmux = false } = {}) {
   const { wtPath, wtName } = getActiveWorktreeInfo();
-  const toolSpec = TOOL_SPECS[toolKey];
-  if (!toolSpec) return;
-
-  const tabLabel = getToolTabLabel(toolSpec, wtName, useTmux);
-  const warmTerminalId = consumeWarmToolStandby(toolSpec, { wtPath, useTmux });
-
-  if (warmTerminalId) {
-    const info = state.terminals.get(warmTerminalId);
-    if (info) {
-      info.name = tabLabel;
-      revealTerminal(warmTerminalId, { name: tabLabel });
-      switchToTerminal(warmTerminalId);
-      ensureWarmToolStandbysForWorktree(wtPath, wtName);
-      return;
-    }
-  }
+  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
+  const tmuxLabel = useTmux ? 'tmux+' : '';
+  const tabLabel = `${tmuxLabel}${toolName}: ${wtName}`;
 
   if (useTmux) {
+    // Create terminal with tmux, then send the tool command after tmux is ready
+    // Use a unique counter to avoid attaching to an existing tmux session
+    // that already has the tool running (which would send the command into the running tool)
+    const uniqueId = Date.now();
+    const sessionName = `${safeName}_${toolName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${uniqueId}`;
     createTerminal(wtPath, tabLabel, {
       useTmux: true,
-      sessionName: createToolSessionName(wtName, toolSpec.key),
+      sessionName,
       worktreePath: wtPath,
-      toolKey: toolSpec.key,
-      toolIcon: toolSpec.icon,
     }).then((id) => {
-      if (id && toolSpec.command) {
+      if (id && command) {
         // tmux starts at ~400ms (100ms shell + 300ms tmux), tool needs extra wait
         setTimeout(() => {
-          window.api.ptyWrite(id, `${toolSpec.command}\r`);
+          window.api.ptyWrite(id, `${command}\r`);
         }, 800);
       }
-      ensureWarmToolStandbysForWorktree(wtPath, wtName);
     });
   } else {
     // Create a plain terminal and then write the launch command
     createTerminal(wtPath, tabLabel, {
       useTmux: false,
       worktreePath: wtPath,
-      toolKey: toolSpec.key,
-      toolIcon: toolSpec.icon,
     }).then((id) => {
-      if (id && toolSpec.command) {
+      if (id && command) {
         // Wait for shell to be ready, then launch the tool
         setTimeout(() => {
-          window.api.ptyWrite(id, `${toolSpec.command}\r`);
+          window.api.ptyWrite(id, `${command}\r`);
         }, 500);
       }
-      ensureWarmToolStandbysForWorktree(wtPath, wtName);
     });
   }
 }
@@ -969,18 +655,9 @@ function showTabDropdown() {
 
   // Position relative to the + button
   const btnRect = dom.tabNewBtn.getBoundingClientRect();
+  dropdown.style.left = `${btnRect.left}px`;
+  dropdown.style.top = `${btnRect.bottom + 4}px`;
   document.body.appendChild(dropdown);
-  const dropdownRect = dropdown.getBoundingClientRect();
-  const railExpanded = !state.terminalTabRailCollapsed;
-  const left = railExpanded
-    ? btnRect.right + 8
-    : btnRect.left;
-  const maxLeft = window.innerWidth - dropdownRect.width - 8;
-  const top = railExpanded
-    ? Math.min(btnRect.top, window.innerHeight - dropdownRect.height - 8)
-    : Math.min(btnRect.bottom + 6, window.innerHeight - dropdownRect.height - 8);
-  dropdown.style.left = `${Math.max(8, Math.min(left, maxLeft))}px`;
-  dropdown.style.top = `${Math.max(48, top)}px`;
 
   // Force reflow for animation
   dropdown.offsetHeight;
@@ -998,10 +675,10 @@ function showTabDropdown() {
         createNewTerminalTab();
         break;
       case 'new-opencode':
-        createToolTab('opencode', { useTmux: state.useTmux });
+        createToolTab('OpenCode', 'opencode', { useTmux: state.useTmux });
         break;
       case 'new-gemini':
-        createToolTab('gemini', { useTmux: state.useTmux });
+        createToolTab('Gemini', 'gemini', { useTmux: state.useTmux });
         break;
     }
   });
@@ -1022,6 +699,72 @@ function handleDropdownOutsideClick(e) {
   const dropdown = document.getElementById('tab-dropdown');
   if (dropdown && !dropdown.contains(e.target) && !dom.tabNewBtn.contains(e.target)) {
     hideTabDropdown();
+  }
+}
+
+function showWorktreeContextMenu(project, wt, x, y) {
+  hideWorktreeContextMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'worktree-context-menu tab-dropdown';
+  menu.id = 'worktree-context-menu';
+  menu.innerHTML = `
+    <button class="tab-dropdown-item" data-action="merge-to-local-branch">
+      <span class="tab-dropdown-icon terminal-icon">${icons.gitBranch}</span>
+      <span>Merge to local branch</span>
+    </button>
+    <div class="tab-dropdown-divider"></div>
+    <button class="tab-dropdown-item danger" data-action="force-remove-worktree">
+      <span class="tab-dropdown-icon danger-icon">${icons.trash}</span>
+      <span>Force remove worktree</span>
+    </button>
+  `;
+
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  document.body.appendChild(menu);
+
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 8);
+  const top = Math.min(y, window.innerHeight - rect.height - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+
+  menu.offsetHeight;
+  menu.classList.add('visible');
+
+  menu.addEventListener('click', async (e) => {
+    const item = e.target.closest('.tab-dropdown-item');
+    if (!item) return;
+
+    const action = item.dataset.action;
+    hideWorktreeContextMenu();
+
+    if (action === 'merge-to-local-branch') {
+      await showMergeWorktreeModal(project, wt);
+      return;
+    }
+
+    if (action === 'force-remove-worktree') {
+      await showForceRemoveWorktreeModal(project, wt);
+    }
+  });
+
+  setTimeout(() => {
+    document.addEventListener('click', handleWorktreeContextMenuOutsideClick);
+  }, 0);
+}
+
+function hideWorktreeContextMenu() {
+  const existing = document.getElementById('worktree-context-menu');
+  if (existing) existing.remove();
+  document.removeEventListener('click', handleWorktreeContextMenuOutsideClick);
+}
+
+function handleWorktreeContextMenuOutsideClick(e) {
+  const menu = document.getElementById('worktree-context-menu');
+  if (menu && !menu.contains(e.target)) {
+    hideWorktreeContextMenu();
   }
 }
 
@@ -1083,7 +826,6 @@ async function loadWorkspaces() {
   if (state.expandedProjects.size === 0) {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
   }
-  cleanupStaleToolStandbys();
   renderSidebar();
 }
 
@@ -1202,6 +944,14 @@ function attachSidebarProjectEvents(project) {
 
   // Worktree items → open terminal or switch to worktree context
   el.querySelectorAll('.sidebar-wt-item').forEach((wtEl) => {
+    wtEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wt = (project.worktrees || []).find((item) => item.path === wtEl.dataset.wtPath);
+      if (!wt) return;
+      showWorktreeContextMenu(project, wt, e.clientX, e.clientY);
+    });
+
     wtEl.addEventListener('click', async (e) => {
       if (e.target.closest('.sidebar-wt-actions')) return;
       const wtPath = wtEl.dataset.wtPath;
@@ -1229,7 +979,6 @@ function attachSidebarProjectEvents(project) {
             sessionName: wtName.replace(/[^a-zA-Z0-9]/g, '_'),
             worktreePath: wtPath,
           });
-          ensureWarmToolStandbysForWorktree(wtPath, wtName);
         }
       }
     });
@@ -1550,6 +1299,136 @@ async function showAddWorktreeModal(project) {
   });
 }
 
+async function showMergeWorktreeModal(project, wt) {
+  if (!wt?.branch) {
+    showToast('This worktree does not have a branch to merge', 'error');
+    return;
+  }
+  if (wt.detached) {
+    showToast('Cannot merge from a detached HEAD worktree', 'error');
+    return;
+  }
+  if (wt.bare) {
+    showToast('Cannot merge from a bare worktree', 'error');
+    return;
+  }
+
+  const branches = await window.api.getBranches(project.path);
+  const availableBranches = branches.filter((branch) => !branch.startsWith('origin/') && branch !== wt.branch);
+
+  if (!availableBranches.length) {
+    showToast('No local target branches available for merge', 'info');
+    return;
+  }
+
+  dom.modalTitle.textContent = 'Merge to Local Branch';
+  dom.modalBody.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Source Branch</label>
+      <input class="form-input" value="${esc(wt.branch)}" disabled />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Target Branch</label>
+      ${branchComboHTML()}
+    </div>
+    <p class="form-hint">This checks out the selected local branch in the project root worktree and merges <strong>${esc(wt.branch)}</strong> into it.</p>
+  `;
+
+  const comboContainer = dom.modalBody.querySelector('.branch-combo');
+  const combo = setupBranchCombo({
+    containerEl: comboContainer,
+    branches: availableBranches,
+    placeholder: 'Search local branches...',
+    showCreateOption: false,
+  });
+
+  dom.modalFooter.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel">Cancel</button>
+    <button class="btn-primary" id="modal-confirm">${icons.gitBranch} Merge Branch</button>
+  `;
+  showModal();
+  setTimeout(() => combo.focus(), 100);
+
+  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
+  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
+    const { branch: targetBranch } = combo.getSelected();
+    if (!targetBranch) {
+      showToast('Please select a local target branch', 'error');
+      return;
+    }
+
+    const btn = dom.modalFooter.querySelector('#modal-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Merging...';
+
+    const result = await window.api.mergeWorktreeToBranch({
+      projectPath: project.path,
+      sourceBranch: wt.branch,
+      targetBranch,
+    });
+
+    if (result.success) {
+      showToast(`Merged ${wt.branch} into ${targetBranch}`, 'success');
+      hideModal();
+      await window.api.refreshWorktrees(project.path);
+      await loadWorkspaces();
+    } else {
+      showToast(`Merge failed: ${result.error}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.gitBranch} Merge Branch`;
+    }
+  });
+}
+
+async function showForceRemoveWorktreeModal(project, wt) {
+  if (wt.path === project.path) {
+    showToast('Cannot force remove the primary project worktree', 'error');
+    return;
+  }
+
+  dom.modalTitle.textContent = 'Force Remove Worktree';
+  dom.modalBody.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Worktree</label>
+      <input class="form-input" value="${esc(wt.name)}" disabled />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Path</label>
+      <input class="form-input" value="${esc(wt.path)}" disabled />
+    </div>
+    <p class="form-hint">This runs <code>git worktree remove --force</code> and may discard uncommitted changes in that worktree.</p>
+  `;
+
+  dom.modalFooter.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel">Cancel</button>
+    <button class="btn-primary danger-btn" id="modal-confirm">${icons.trash} Force Remove</button>
+  `;
+  showModal();
+
+  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
+  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
+    const btn = dom.modalFooter.querySelector('#modal-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Removing...';
+
+    const result = await window.api.forceRemoveWorktree({
+      projectPath: project.path,
+      wtPath: wt.path,
+    });
+
+    if (result.success) {
+      showToast(`Force removed: ${wt.name}`, 'success');
+      hideModal();
+      await window.api.refreshWorktrees(project.path);
+      await loadWorkspaces();
+    } else {
+      showToast(`Failed: ${result.error}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.trash} Force Remove`;
+    }
+  });
+}
+
 // ── Modal ──────────────────────────────────────────────
 function showModal() { dom.modalOverlay.style.display = ''; }
 function hideModal() { dom.modalOverlay.style.display = 'none'; }
@@ -1581,6 +1460,5 @@ function esc(str) {
 // ── Initialize ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setWorkspaceSidebarCollapsed(loadWorkspaceSidebarCollapsed(), { persist: false });
-  setTerminalTabRailCollapsed(loadTerminalTabRailCollapsed(), { persist: false });
   loadWorkspaces();
 });

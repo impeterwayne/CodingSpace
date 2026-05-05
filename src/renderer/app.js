@@ -37,12 +37,22 @@ const state = {
   useExternalWt: false,
   useTmux: true,
   workspaceSidebarCollapsed: false,
+  tabSidebarCollapsed: false,
   expandedProjects: new Set(),
   terminals: new Map(),   // id -> { term, fitAddon, paneEl, name, cwd, worktreePath, cleanup }
   activeTerminalId: null,
   activeWorktreePath: null, // which worktree's tabs are currently shown
   worktreeActiveTerminal: new Map(), // worktreePath -> last active terminal id
   terminalCounter: 0,
+  // Prewarmed tool sessions: { id, term, fitAddon, paneEl, cleanup, cwd, worktreePath, ready }
+  prewarm: {
+    opencode: null,
+    gemini: null,
+  },
+  prewarmInProgress: {
+    opencode: false,
+    gemini: false,
+  },
 };
 
 // ── DOM Refs ───────────────────────────────────────────
@@ -69,7 +79,9 @@ const dom = {
   terminalWelcome: $('#terminal-welcome'),
   terminalContainer: $('#terminal-container'),
   terminalTabs: $('#terminal-tabs'),
+  tabListScroll: $('#tab-list-scroll'),
   tabNewBtn: $('#tab-new-btn'),
+  tabCollapseBtn: $('#tab-collapse-btn'),
   btnVsCode: $('#btn-vscode'),
   btnExplorer: $('#btn-explorer'),
   btnAndroidStudio: $('#btn-android-studio'),
@@ -81,6 +93,7 @@ const dom = {
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
+const TAB_SIDEBAR_COLLAPSED_KEY = 'codingspace.tabSidebarCollapsed';
 
 // ── Window Controls ────────────────────────────────────
 dom.btnMinimize.addEventListener('click', () => window.api.minimize());
@@ -315,6 +328,350 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
   return id;
 }
 
+/**
+ * Create a terminal that directly spawns a tool command as the PTY process.
+ * Unlike createTerminal() which spawns a shell, this makes the tool the direct
+ * process — giving it proper terminal allocation (fixes opencode/gemini not
+ * spawning when typed into a shell).
+ */
+async function createDirectToolTerminal(cwd, name, { command, worktreePath = '' } = {}) {
+  const id = `term-${++state.terminalCounter}`;
+  const wtPath = worktreePath || cwd;
+
+  const term = new Terminal({
+    theme: WT_THEME,
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
+    fontSize: 14,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    cursorWidth: 2,
+    allowProposedApi: true,
+    scrollback: 10000,
+    tabStopWidth: 4,
+  });
+
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(new WebLinksAddon());
+
+  const paneEl = document.createElement('div');
+  paneEl.className = 'terminal-pane';
+  paneEl.id = `pane-${id}`;
+  dom.terminalContainer.appendChild(paneEl);
+
+  term.open(paneEl);
+  requestAnimationFrame(() => fitAddon.fit());
+
+  // Create a shell PTY, then type the resolved tool launch command into it.
+  const result = await window.api.ptyCreate({ cwd, id });
+  if (!result.success) {
+    showToast(`Failed to launch ${command}: ${result.error}`, 'error');
+    paneEl.remove();
+    term.dispose();
+    return null;
+  }
+
+  let launchCommand;
+  try {
+    const resolved = await window.api.resolveToolLaunch({ command });
+    if (!resolved?.success || !resolved.shellCommand) {
+      throw new Error(resolved?.error || `Failed to resolve launch command for ${command}`);
+    }
+    launchCommand = resolved.shellCommand;
+  } catch (error) {
+    showToast(`Failed to launch ${command}: ${error.message}`, 'error');
+    window.api.ptyKill(id);
+    paneEl.remove();
+    term.dispose();
+    return null;
+  }
+
+  const cleanupData = window.api.onPtyData(({ id: dataId, data }) => {
+    if (dataId === id) term.write(data);
+  });
+
+  const onDataDisposable = term.onData((data) => {
+    window.api.ptyWrite(id, data);
+  });
+
+  const onResizeDisposable = term.onResize(({ cols, rows }) => {
+    window.api.ptyResize(id, cols, rows);
+  });
+
+  const cleanupExit = window.api.onPtyExit(({ id: exitId }) => {
+    if (exitId === id) closeTerminal(id);
+  });
+
+  state.terminals.set(id, {
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath,
+    cleanup: () => {
+      cleanupData();
+      cleanupExit();
+      onDataDisposable.dispose();
+      onResizeDisposable.dispose();
+    },
+  });
+
+  state.activeWorktreePath = wtPath;
+  rebuildTabsForWorktree(wtPath);
+  switchToTerminal(id);
+
+  setTimeout(() => {
+    fitAddon.fit();
+    window.api.ptyResize(id, term.cols, term.rows);
+    setTimeout(() => {
+      window.api.ptyWrite(id, `${launchCommand}\r`);
+    }, 500);
+  }, 100);
+
+  return id;
+}
+
+function attachPtyToTerminal(id, term, fitAddon, paneEl, cleanupExtra = () => {}) {
+  const cleanupData = window.api.onPtyData(({ id: dataId, data }) => {
+    if (dataId === id) term.write(data);
+  });
+
+  const onDataDisposable = term.onData((data) => {
+    window.api.ptyWrite(id, data);
+  });
+
+  const onResizeDisposable = term.onResize(({ cols, rows }) => {
+    window.api.ptyResize(id, cols, rows);
+  });
+
+  const cleanupExit = window.api.onPtyExit(({ id: exitId }) => {
+    if (exitId === id) closeTerminal(id);
+  });
+
+  return () => {
+    cleanupExtra();
+    cleanupData();
+    cleanupExit();
+    onDataDisposable.dispose();
+    onResizeDisposable.dispose();
+  };
+}
+
+function buildTmuxLaunchCommand(sessionName, launchCommand) {
+  return `tmux new-session -s ${sessionName} -- ${launchCommand}`;
+}
+
+// ═══════════════════════════════════════════════════════
+// PREWARM SYSTEM — Background tool sessions
+// ═══════════════════════════════════════════════════════
+
+/** Tools that can be prewarmed */
+const PREWARM_TOOLS = {
+  opencode: { command: 'opencode', label: 'OpenCode' },
+  gemini:   { command: 'gemini',   label: 'Gemini' },
+};
+
+/**
+ * Create a prewarmed background PTY for a tool session.
+ * No xterm or DOM pane is created here; only the backend session is warmed.
+ */
+async function createPrewarmedTerminal(toolKey) {
+  const tool = PREWARM_TOOLS[toolKey];
+  if (!tool) return;
+
+  // Don't prewarm if already in progress or already warmed
+  if (state.prewarmInProgress[toolKey] || state.prewarm[toolKey]) return;
+
+  // Need an active worktree to prewarm against
+  const wtPath = state.activeWorktreePath;
+  if (!wtPath) return;
+
+  state.prewarmInProgress[toolKey] = true;
+
+  const id = `term-${++state.terminalCounter}`;
+
+  const useTmux = state.useTmux;
+  const result = await window.api.ptyCreate({ cwd: wtPath, id });
+  if (!result.success) {
+    console.warn(`[prewarm] Failed to create PTY for ${toolKey}:`, result.error);
+    state.prewarmInProgress[toolKey] = false;
+    return;
+  }
+
+  let launchCommand;
+  try {
+    const resolved = await window.api.resolveToolLaunch({ command: tool.command });
+    if (!resolved?.success || !resolved.shellCommand) {
+      throw new Error(resolved?.error || `Failed to resolve launch command for ${tool.command}`);
+    }
+    launchCommand = resolved.shellCommand;
+  } catch (error) {
+    console.warn(`[prewarm] Failed to resolve launch command for ${toolKey}:`, error);
+    window.api.ptyKill(id);
+    state.prewarmInProgress[toolKey] = false;
+    return;
+  }
+
+  let exitCleanup = () => {};
+  const cleanup = () => {
+    exitCleanup();
+  };
+
+  exitCleanup = window.api.onPtyExit(({ id: exitId }) => {
+    if (exitId !== id) return;
+    if (state.prewarm[toolKey]?.id !== id) return;
+    cleanupPrewarm(toolKey);
+    setTimeout(() => createPrewarmedTerminal(toolKey), 1000);
+  });
+
+  // Send initial resize + launch the tool command when needed
+  setTimeout(() => {
+    window.api.ptyResize(id, 120, 30);
+
+    if (useTmux) {
+      const wtName = getWorktreeNameForPath(wtPath);
+      const safeName = (wtName || 'main').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const uniqueId = Date.now();
+      const sessionName = `${safeName}_${tool.command}_prewarm_${uniqueId}`;
+      setTimeout(() => {
+        window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, launchCommand)}\r`);
+      }, 300);
+    } else {
+      setTimeout(() => {
+        window.api.ptyWrite(id, `${launchCommand}\r`);
+      }, 500);
+    }
+  }, 100);
+
+  // Store as prewarmed backend session only
+  state.prewarm[toolKey] = {
+    id,
+    cleanup,
+    cwd: wtPath,
+    worktreePath: wtPath,
+    usedTmux: useTmux,
+    launchCommand,
+  };
+  state.prewarmInProgress[toolKey] = false;
+
+  console.log(`[prewarm] ${tool.label} session ready (${id}) for ${wtPath}`);
+}
+
+/** Get worktree display name for a path */
+function getWorktreeNameForPath(wtPath) {
+  for (const p of state.projects) {
+    const wt = (p.worktrees || []).find((w) => w.path === wtPath);
+    if (wt) return wt.name;
+  }
+  return 'Terminal';
+}
+
+/** Clean up a prewarmed session without promoting it */
+function cleanupPrewarm(toolKey) {
+  const pw = state.prewarm[toolKey];
+  if (!pw) return;
+
+  pw.cleanup();
+  window.api.ptyKill(pw.id);
+  state.prewarm[toolKey] = null;
+}
+
+/**
+ * Promote a prewarmed terminal into a visible tab.
+ * Returns true if promotion succeeded, false if no prewarm available.
+ */
+function promotePrewarmedTerminal(toolKey) {
+  const pw = state.prewarm[toolKey];
+  if (!pw) return false;
+
+  const tool = PREWARM_TOOLS[toolKey];
+  const { wtPath, wtName } = getActiveWorktreeInfo();
+
+  // Check if the prewarmed session matches the current worktree and tmux setting
+  if (pw.worktreePath !== wtPath || pw.usedTmux !== state.useTmux) {
+    // Mismatch — discard and fall through to normal creation
+    cleanupPrewarm(toolKey);
+    return false;
+  }
+
+  const id = pw.id;
+  const tmuxLabel = pw.usedTmux ? 'tmux+' : '';
+  const tabLabel = `${tmuxLabel}${tool.label}: ${wtName}`;
+
+  const term = new Terminal({
+    theme: WT_THEME,
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
+    fontSize: 14,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    cursorWidth: 2,
+    allowProposedApi: true,
+    scrollback: 10000,
+    tabStopWidth: 4,
+  });
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(new WebLinksAddon());
+
+  const paneEl = document.createElement('div');
+  paneEl.className = 'terminal-pane';
+  paneEl.id = `pane-${id}`;
+  dom.terminalContainer.appendChild(paneEl);
+  term.open(paneEl);
+
+  const cleanup = attachPtyToTerminal(id, term, fitAddon, paneEl);
+
+  // Register in the terminals map
+  state.terminals.set(id, {
+    term,
+    fitAddon,
+    paneEl,
+    name: tabLabel,
+    cwd: pw.cwd,
+    worktreePath: pw.worktreePath,
+    cleanup,
+  });
+
+  // Clear the prewarm slot
+  state.prewarm[toolKey] = null;
+
+  // Switch worktree context and create tab
+  state.activeWorktreePath = wtPath;
+  rebuildTabsForWorktree(wtPath);
+  switchToTerminal(id);
+
+  // Fit the promoted terminal
+  setTimeout(() => {
+    fitAddon.fit();
+    window.api.ptyResize(id, term.cols, term.rows);
+  }, 50);
+
+  console.log(`[prewarm] Promoted ${tool.label} session (${id})`);
+
+  // Prewarm the next one
+  setTimeout(() => createPrewarmedTerminal(toolKey), 500);
+
+  return true;
+}
+
+/** Prewarm all tool sessions for the current worktree */
+function prewarmAllTools() {
+  if (!state.activeWorktreePath) return;
+  for (const toolKey of Object.keys(PREWARM_TOOLS)) {
+    createPrewarmedTerminal(toolKey);
+  }
+}
+
+/** Discard and re-prewarm when the active worktree changes */
+function reprewarmForWorktree() {
+  for (const toolKey of Object.keys(PREWARM_TOOLS)) {
+    // Discard existing prewarm if it doesn't match
+    const pw = state.prewarm[toolKey];
+    if (pw && pw.worktreePath !== state.activeWorktreePath) {
+      cleanupPrewarm(toolKey);
+    }
+    createPrewarmedTerminal(toolKey);
+  }
+}
+
 /** Get all terminal IDs belonging to a given worktree path */
 function getTerminalsForWorktree(wtPath) {
   const ids = [];
@@ -326,8 +683,8 @@ function getTerminalsForWorktree(wtPath) {
 
 /** Rebuild the tab bar to show only terminals for the given worktree */
 function rebuildTabsForWorktree(wtPath) {
-  // Remove all existing tab buttons (except the + button)
-  dom.terminalTabs.querySelectorAll('.terminal-tab').forEach((t) => t.remove());
+  // Remove all existing tab buttons from the scrollable list
+  dom.tabListScroll.querySelectorAll('.terminal-tab').forEach((t) => t.remove());
 
   // Insert tabs for this worktree
   const ids = getTerminalsForWorktree(wtPath);
@@ -337,7 +694,7 @@ function rebuildTabsForWorktree(wtPath) {
   }
 }
 
-/** Insert a single tab button into the tab bar */
+/** Insert a single tab button into the vertical tab list */
 function insertTab(id, name) {
   const tab = document.createElement('button');
   tab.className = 'terminal-tab';
@@ -347,8 +704,8 @@ function insertTab(id, name) {
     <span class="terminal-tab-name">${esc(name)}</span>
     <button class="terminal-tab-close" data-close-term="${id}" title="Close">${icons.close}</button>
   `;
-  // Insert before the + button
-  dom.terminalTabs.insertBefore(tab, dom.tabNewBtn);
+  // Append to the scrollable tab list
+  dom.tabListScroll.appendChild(tab);
 
   // Switch on click
   tab.addEventListener('click', (e) => {
@@ -389,13 +746,16 @@ function switchWorktreeContext(wtPath) {
     dom.terminalContainer.querySelectorAll('.terminal-pane').forEach((p) => {
       p.classList.remove('active');
     });
-    dom.terminalTabs.querySelectorAll('.terminal-tab').forEach((t) => {
+    dom.tabListScroll.querySelectorAll('.terminal-tab').forEach((t) => {
       t.classList.remove('active');
     });
     dom.terminalWelcome.classList.remove('hidden');
   }
 
   updateSidebarActiveState();
+
+  // Re-prewarm tool sessions for the new worktree
+  reprewarmForWorktree();
 }
 
 function switchToTerminal(id) {
@@ -414,7 +774,7 @@ function switchToTerminal(id) {
   state.worktreeActiveTerminal.set(termInfo.worktreePath, id);
 
   // Update tab active state
-  dom.terminalTabs.querySelectorAll('.terminal-tab').forEach((t) => {
+  dom.tabListScroll.querySelectorAll('.terminal-tab').forEach((t) => {
     t.classList.toggle('active', t.dataset.termId === id);
   });
 
@@ -452,7 +812,7 @@ function closeTerminal(id) {
   window.api.ptyKill(id);
 
   // Remove tab from tab bar
-  const tab = dom.terminalTabs.querySelector(`[data-term-id="${id}"]`);
+  const tab = dom.tabListScroll.querySelector(`[data-term-id="${id}"]`);
   if (tab) tab.remove();
 
   state.terminals.delete(id);
@@ -558,6 +918,38 @@ function setWorkspaceSidebarCollapsed(collapsed, { persist = true } = {}) {
 // Resize all terminals on window resize
 window.addEventListener('resize', () => fitActiveTerminal());
 
+// ── Tab Sidebar Collapse Toggle ────────────────────────
+function loadTabSidebarCollapsed() {
+  try {
+    const val = localStorage.getItem(TAB_SIDEBAR_COLLAPSED_KEY);
+    return val === 'true';
+  } catch (error) {
+    return false;
+  }
+}
+
+function saveTabSidebarCollapsed(collapsed) {
+  try {
+    localStorage.setItem(TAB_SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+  } catch (error) {
+    console.warn('Failed to save tab sidebar preference:', error.message);
+  }
+}
+
+function setTabSidebarCollapsed(collapsed, { persist = true } = {}) {
+  state.tabSidebarCollapsed = collapsed;
+  dom.terminalTabs.classList.toggle('collapsed', collapsed);
+  dom.tabCollapseBtn.title = collapsed ? 'Expand tabs' : 'Collapse tabs';
+  if (persist) saveTabSidebarCollapsed(collapsed);
+  fitActiveTerminal();
+  // Fit again after the transition finishes
+  setTimeout(() => fitActiveTerminal(), 280);
+}
+
+dom.tabCollapseBtn.addEventListener('click', () => {
+  setTabSidebarCollapsed(!state.tabSidebarCollapsed);
+});
+
 // ── New Tab Dropdown ───────────────────────────────────
 function getActiveWorktreeInfo() {
   const wtPath = state.activeWorktreePath;
@@ -584,41 +976,42 @@ function createNewTerminalTab() {
 }
 
 function createToolTab(toolName, command, { useTmux = false } = {}) {
+  // Try to promote a prewarmed session first
+  const toolKey = toolName.toLowerCase().replace(/[^a-z]/g, '');
+  if (PREWARM_TOOLS[toolKey] && promotePrewarmedTerminal(toolKey)) {
+    return; // Prewarmed session promoted — instant!
+  }
+
+  // Fallback: no prewarm available, create from scratch
   const { wtPath, wtName } = getActiveWorktreeInfo();
   const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
   const tmuxLabel = useTmux ? 'tmux+' : '';
   const tabLabel = `${tmuxLabel}${toolName}: ${wtName}`;
 
   if (useTmux) {
-    // Create terminal with tmux, then send the tool command after tmux is ready
-    // Use a unique counter to avoid attaching to an existing tmux session
-    // that already has the tool running (which would send the command into the running tool)
+    // With tmux: create shell terminal and start tmux with the tool command directly
     const uniqueId = Date.now();
     const sessionName = `${safeName}_${toolName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${uniqueId}`;
     createTerminal(wtPath, tabLabel, {
-      useTmux: true,
+      useTmux: false,
       sessionName,
       worktreePath: wtPath,
-    }).then((id) => {
+    }).then(async (id) => {
       if (id && command) {
-        // tmux starts at ~400ms (100ms shell + 300ms tmux), tool needs extra wait
+        const resolved = await window.api.resolveToolLaunch({ command });
+        if (!resolved?.success || !resolved.shellCommand) {
+          showToast(`Failed to launch ${command}: ${resolved?.error || 'Unable to resolve launch command'}`, 'error');
+          return;
+        }
         setTimeout(() => {
-          window.api.ptyWrite(id, `${command}\r`);
-        }, 800);
+          window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, resolved.shellCommand)}\r`);
+        }, 500);
       }
     });
   } else {
-    // Create a plain terminal and then write the launch command
-    createTerminal(wtPath, tabLabel, {
-      useTmux: false,
+    createDirectToolTerminal(wtPath, tabLabel, {
+      command,
       worktreePath: wtPath,
-    }).then((id) => {
-      if (id && command) {
-        // Wait for shell to be ready, then launch the tool
-        setTimeout(() => {
-          window.api.ptyWrite(id, `${command}\r`);
-        }, 500);
-      }
     });
   }
 }
@@ -653,10 +1046,10 @@ function showTabDropdown() {
     </button>
   `;
 
-  // Position relative to the + button
+  // Position relative to the + button (to the right of the vertical sidebar)
   const btnRect = dom.tabNewBtn.getBoundingClientRect();
-  dropdown.style.left = `${btnRect.left}px`;
-  dropdown.style.top = `${btnRect.bottom + 4}px`;
+  dropdown.style.left = `${btnRect.right + 4}px`;
+  dropdown.style.top = `${btnRect.top}px`;
   document.body.appendChild(dropdown);
 
   // Force reflow for animation
@@ -979,6 +1372,9 @@ function attachSidebarProjectEvents(project) {
             sessionName: wtName.replace(/[^a-zA-Z0-9]/g, '_'),
             worktreePath: wtPath,
           });
+          // Start prewarming tool sessions for this worktree immediately in the background.
+          // The visible default tab remains a normal terminal.
+          prewarmAllTools();
         }
       }
     });
@@ -1460,5 +1856,6 @@ function esc(str) {
 // ── Initialize ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setWorkspaceSidebarCollapsed(loadWorkspaceSidebarCollapsed(), { persist: false });
+  setTabSidebarCollapsed(loadTabSidebarCollapsed(), { persist: false });
   loadWorkspaces();
 });

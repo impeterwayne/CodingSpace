@@ -380,99 +380,209 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: #0c0c0c; /* Windows Terminal dark bg */
   overflow: hidden;
   position: relative;
 }
 
-/* ── Terminal Tabs (Windows Terminal style) ── */
+/* ── Vertical Tab Sidebar ── */
 .terminal-tabs {
   display: flex;
-  align-items: flex-end;
-  background: #1e1e1e;
-  min-height: 36px;
-  padding: 0 4px;
-  gap: 1px;
+  flex-direction: column;
+  width: 180px;
+  min-width: 180px;
+  background: #141418;
+  border-right: 1px solid #2a2a30;
   flex-shrink: 0;
-  border-bottom: 1px solid #333;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.terminal-tabs::-webkit-scrollbar { height: 0; }
 
+.terminal-tabs.collapsed {
+  width: 42px;
+  min-width: 42px;
+}
+
+/* ── Top controls: collapse + new tab ── */
+.tab-sidebar-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 6px;
+  border-bottom: 1px solid #2a2a30;
+  flex-shrink: 0;
+}
+
+.terminal-tabs.collapsed .tab-sidebar-controls {
+  flex-direction: column;
+}
+.terminal-tabs.collapsed .tab-collapse-btn {
+  order: -1;
+}
+.terminal-tabs.collapsed .tab-new-btn {
+  order: 1;
+}
+
+.tab-collapse-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #666;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.tab-collapse-btn:hover {
+  background: rgba(255,255,255,0.07);
+  color: #bbb;
+}
+.tab-collapse-btn svg {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(180deg);
+}
+.terminal-tabs.collapsed .tab-collapse-btn svg {
+  transform: rotate(0deg);
+}
+
+.tab-new-btn {
+  flex: 1;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: #6c5ce7;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tab-new-btn:hover {
+  background: rgba(108, 92, 231, 0.12);
+  color: #a29bfe;
+}
+.tab-new-btn .tab-new-label {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.terminal-tabs.collapsed .tab-new-btn {
+  flex: none;
+  width: 100%;
+}
+.terminal-tabs.collapsed .tab-new-btn .tab-new-label {
+  display: none;
+}
+
+/* ── Scrollable tab list ── */
+.tab-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 6px;
+}
+.tab-list-scroll::-webkit-scrollbar { width: 3px; }
+.tab-list-scroll::-webkit-scrollbar-track { background: transparent; }
+.tab-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 10px;
+}
+
+/* ── Individual vertical tab ── */
 .terminal-tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
+  width: 100%;
+  padding: 8px 10px;
   background: transparent;
   border: none;
-  color: #888;
+  color: #777;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s ease;
   white-space: nowrap;
+  overflow: hidden;
   position: relative;
-  border-radius: 6px 6px 0 0;
-  margin-top: 4px;
+  border-radius: 6px;
+  margin-bottom: 2px;
+  text-align: left;
+  border-left: 2px solid transparent;
 }
 .terminal-tab:hover {
-  background: rgba(255,255,255,0.05);
-  color: #ccc;
+  background: rgba(255,255,255,0.04);
+  color: #bbb;
 }
 .terminal-tab.active {
-  background: #0c0c0c;
-  color: #e8e8e8;
+  background: rgba(108, 92, 231, 0.1);
+  color: #e0dff0;
+  border-left-color: #6c5ce7;
 }
 .terminal-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #0c0c0c;
+  content: none;
 }
 .terminal-tab-icon {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   color: #6c5ce7;
+}
+.terminal-tab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-tabs.collapsed .terminal-tab-name {
+  display: none;
 }
 .terminal-tab-close {
   width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
   border: none; background: transparent;
-  color: #666;
+  color: #555;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.1s;
   padding: 0;
-  margin-left: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.terminal-tab:hover .terminal-tab-close {
+  opacity: 1;
 }
 .terminal-tab-close:hover {
   background: rgba(255,255,255,0.1);
   color: #fff;
 }
-.terminal-tab.active .terminal-tab-close { color: #888; }
+.terminal-tab.active .terminal-tab-close { opacity: 1; color: #888; }
 .terminal-tab.active .terminal-tab-close:hover { color: #ff6b6b; background: rgba(255,107,107,0.15); }
 
-.tab-new-btn {
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  border: none; background: transparent;
-  color: #666;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.1s;
-  margin: auto 4px auto 2px;
-  flex-shrink: 0;
+.terminal-tabs.collapsed .terminal-tab-close {
+  display: none;
 }
-.tab-new-btn:hover {
-  background: rgba(255,255,255,0.08);
-  color: #ccc;
+.terminal-tabs.collapsed .terminal-tab {
+  justify-content: center;
+  padding: 8px 4px;
+  border-left-width: 0;
+  border-bottom: 2px solid transparent;
+}
+.terminal-tabs.collapsed .terminal-tab.active {
+  border-bottom-color: #6c5ce7;
 }
 
 .brand-logo-btn {
@@ -485,6 +595,17 @@ body {
 
 .brand-logo-btn:hover {
   background: rgba(255,255,255,0.08);
+}
+
+.terminal-pane.prewarm-hidden {
+  position: absolute !important;
+  top: -99999px !important;
+  left: -99999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
 }
 
 /* ══════════════════════════════════════════
@@ -885,6 +1006,12 @@ body {
 }
 .terminal-pane.active {
   display: block;
+}
+/* Prewarmed terminal panes: full-size for proper xterm fit, but invisible */\r
+.terminal-pane.prewarm-hidden {\r
+  display: block;\r
+  visibility: hidden;\r
+  pointer-events: none;\r
 }
 
 /* ── xterm.js Windows Terminal theme overrides ── */

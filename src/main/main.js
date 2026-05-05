@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { execSync, spawn, exec } = require('child_process');
+const { execSync, execFileSync, spawn, exec } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const pty = require('node-pty');
@@ -116,6 +116,50 @@ function getGitInfo(dirPath) {
     return { branch, modifiedCount, lastCommit, lastCommitDate, aheadBehind };
   } catch (e) {
     return { branch: 'unknown', modifiedCount: 0, lastCommit: '', lastCommitDate: '', aheadBehind: '' };
+  }
+}
+
+function shellQuoteWindowsArg(value) {
+  const normalized = String(value);
+  if (!/[\s"]/u.test(normalized)) return normalized;
+  return `"${normalized.replace(/"/g, '""')}"`;
+}
+
+function resolveToolLaunch(command) {
+  if (process.platform !== 'win32') {
+    return { file: command, args: [], shellCommand: command };
+  }
+
+  try {
+    const output = execFileSync('where.exe', [command], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    const matches = output.split(/\r?\n/).filter(Boolean);
+    const resolvedPath = matches.find((match) => /\.(cmd|bat)$/i.test(match))
+      || matches.find((match) => /\.exe$/i.test(match))
+      || matches[0];
+    if (!resolvedPath) {
+      return { file: command, args: [], shellCommand: command };
+    }
+
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (ext === '.cmd' || ext === '.bat') {
+      return {
+        file: 'cmd.exe',
+        args: ['/d', '/c', resolvedPath],
+        shellCommand: shellQuoteWindowsArg(resolvedPath),
+      };
+    }
+
+    return {
+      file: resolvedPath,
+      args: [],
+      shellCommand: shellQuoteWindowsArg(resolvedPath),
+    };
+  } catch (_) {
+    return { file: command, args: [], shellCommand: command };
   }
 }
 
@@ -290,6 +334,48 @@ app.whenReady().then(() => {
       });
 
       return { success: true, pid: ptyProc.pid };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('pty:create-tool', (_, { cwd, id, command }) => {
+    try {
+      const { file: toolPath, args: toolArgs } = resolveToolLaunch(command);
+
+      const ptyProc = pty.spawn(toolPath, toolArgs, {
+        name: 'xterm-256color',
+        cols: 120,
+        rows: 30,
+        cwd: cwd || os.homedir(),
+        env: { ...process.env, TERM: 'xterm-256color' },
+      });
+
+      ptyProcesses.set(id, ptyProc);
+
+      ptyProc.onData((data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('pty:data', { id, data });
+        }
+      });
+
+      ptyProc.onExit(({ exitCode }) => {
+        ptyProcesses.delete(id);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('pty:exit', { id, exitCode });
+        }
+      });
+
+      return { success: true, pid: ptyProc.pid };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('tool:resolve-launch', (_, { command }) => {
+    try {
+      const { shellCommand } = resolveToolLaunch(command);
+      return { success: true, shellCommand };
     } catch (e) {
       return { success: false, error: e.message };
     }

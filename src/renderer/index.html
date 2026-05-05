@@ -73,12 +73,20 @@
 
     <!-- ═══ Center — Terminal Area ═══ -->
     <main id="terminal-area">
-      <!-- Tab bar for multiple terminals -->
+      <!-- Vertical Tab Sidebar -->
       <div id="terminal-tabs" class="terminal-tabs">
-        <!-- Tabs injected dynamically -->
-        <button class="tab-new-btn" id="tab-new-btn" title="New terminal">
-          <img src="icons/plus.svg" width="12" height="12" alt="" />
-        </button>
+        <div class="tab-sidebar-controls">
+          <button class="tab-new-btn" id="tab-new-btn" title="New terminal">
+            <img src="icons/plus.svg" width="12" height="12" alt="" />
+            <span class="tab-new-label">New Tab</span>
+          </button>
+          <button class="tab-collapse-btn" id="tab-collapse-btn" title="Collapse tabs">
+            <img src="icons/chevron.svg" width="12" height="12" alt="" />
+          </button>
+        </div>
+        <div class="tab-list-scroll" id="tab-list-scroll">
+          <!-- Tabs injected dynamically -->
+        </div>
       </div>
 
       <!-- Terminal container (xterm renders here) -->

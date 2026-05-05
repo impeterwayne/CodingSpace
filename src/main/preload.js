@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Embedded terminal (PTY) ──
   ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
+  ptyCreateTool: (opts) => ipcRenderer.invoke('pty:create-tool', opts),
+  resolveToolLaunch: (opts) => ipcRenderer.invoke('tool:resolve-launch', opts),
   ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
   ptyResize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),
   ptyKill: (id) => ipcRenderer.invoke('pty:kill', { id }),

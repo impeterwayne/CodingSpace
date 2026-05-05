@@ -61,8 +61,6 @@
 
   --sidebar-width: 320px;
   --workspace-sidebar-width: 228px;
-  --terminal-tab-rail-width: 216px;
-  --terminal-tab-rail-collapsed-width: 52px;
 }
 
 /* ── Reset ── */
@@ -382,120 +380,44 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   background: #0c0c0c; /* Windows Terminal dark bg */
   overflow: hidden;
   position: relative;
 }
 
-.terminal-layout {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  overflow: hidden;
-}
-
-.terminal-tab-rail {
-  width: var(--terminal-tab-rail-width);
-  min-width: var(--terminal-tab-rail-width);
-  max-width: var(--terminal-tab-rail-width);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
-  background: linear-gradient(180deg, #151515 0%, #101010 100%);
-  border-right: 1px solid #262626;
-  transition: width var(--transition-smooth), min-width var(--transition-smooth), max-width var(--transition-smooth);
-}
-
-.terminal-tab-rail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 38px;
-  padding: 8px 10px 8px 14px;
-  border-bottom: 1px solid #262626;
-}
-
-.terminal-tab-rail-title {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: var(--text-muted);
-}
-
-.terminal-tab-rail-toggle {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.terminal-tab-rail-toggle:hover {
-  background: rgba(255,255,255,0.06);
-  color: var(--text-primary);
-}
-
-.terminal-tab-rail-toggle svg {
-  transform: rotate(180deg);
-  transition: transform var(--transition-smooth);
-}
-
-.terminal-tab-rail-collapsed {
-  width: var(--terminal-tab-rail-collapsed-width);
-  min-width: var(--terminal-tab-rail-collapsed-width);
-  max-width: var(--terminal-tab-rail-collapsed-width);
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-rail-header {
-  justify-content: center;
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-name,
-.terminal-tab-rail-collapsed .terminal-tab-close {
-  display: none;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-rail-toggle svg {
-  transform: rotate(0deg);
-}
-
 /* ── Terminal Tabs (Windows Terminal style) ── */
 .terminal-tabs {
   display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  align-items: stretch;
-  background: transparent;
-  padding: 8px 6px;
-  gap: 4px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  align-items: flex-end;
+  background: #1e1e1e;
+  min-height: 36px;
+  padding: 0 4px;
+  gap: 1px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
-.terminal-tabs::-webkit-scrollbar { width: 0; }
+.terminal-tabs::-webkit-scrollbar { height: 0; }
 
 .terminal-tab {
   display: flex;
   align-items: center;
-  width: 100%;
-  min-height: 34px;
+  gap: 8px;
+  padding: 7px 14px;
   background: transparent;
+  border: none;
   color: #888;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
   transition: all 0.12s ease;
+  white-space: nowrap;
   position: relative;
-  border-radius: var(--radius-sm);
+  border-radius: 6px 6px 0 0;
+  margin-top: 4px;
 }
 .terminal-tab:hover {
   background: rgba(255,255,255,0.05);
@@ -508,41 +430,16 @@ body {
 .terminal-tab.active::after {
   content: '';
   position: absolute;
+  bottom: -1px;
   left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: var(--accent);
-  border-radius: 999px;
-}
-.terminal-tab-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  padding: 8px 9px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  text-align: left;
+  right: 0;
+  height: 1px;
+  background: #0c0c0c;
 }
 .terminal-tab-icon {
   display: flex;
   align-items: center;
   color: #6c5ce7;
-  flex-shrink: 0;
-}
-.terminal-tab-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .terminal-tab-close {
   width: 18px; height: 18px;
@@ -554,7 +451,6 @@ body {
   transition: all 0.1s;
   padding: 0;
   margin-left: 2px;
-  flex-shrink: 0;
 }
 .terminal-tab-close:hover {
   background: rgba(255,255,255,0.1);
@@ -564,89 +460,19 @@ body {
 .terminal-tab.active .terminal-tab-close:hover { color: #ff6b6b; background: rgba(255,107,107,0.15); }
 
 .tab-new-btn {
-  width: auto;
-  min-height: 34px;
-  display: flex; align-items: center; justify-content: flex-start;
-  gap: 8px;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
   border: none; background: transparent;
   color: #666;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.1s;
-  margin: 8px 6px 0;
-  padding: 8px 9px;
-  flex-shrink: 0;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.terminal-tab-rail-header .tab-new-btn {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-rail-header .tab-new-btn {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  justify-content: center;
-  align-items: center;
-  padding: 0;
-  margin: 0;
-  line-height: 0;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-rail-header .terminal-tab-rail-toggle {
+  margin: auto 4px auto 2px;
   flex-shrink: 0;
 }
-
 .tab-new-btn:hover {
   background: rgba(255,255,255,0.08);
   color: #ccc;
-}
-
-.tab-new-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.terminal-tab-rail-collapsed .terminal-tabs {
-  align-items: center;
-  padding: 8px 6px;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab,
-.terminal-tab-rail-collapsed .tab-new-btn {
-  width: 34px;
-  height: 34px;
-  justify-content: center;
-}
-
-.terminal-tab-rail-collapsed .tab-new-btn {
-  margin: 8px 0 0;
-  padding: 0;
-}
-
-.terminal-tab-rail-collapsed .tab-new-label {
-  display: none;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab-main {
-  justify-content: center;
-  padding: 0;
-}
-
-.terminal-tab-rail-collapsed .terminal-tab.active::after {
-  top: auto;
-  left: 8px;
-  right: 8px;
-  bottom: 3px;
-  width: auto;
-  height: 2px;
 }
 
 .brand-logo-btn {
@@ -976,6 +802,13 @@ body {
   background: rgba(255,255,255,0.07);
   color: #e8e8e8;
 }
+.tab-dropdown-item.danger {
+  color: #ff9a9a;
+}
+.tab-dropdown-item.danger:hover {
+  background: rgba(255,107,107,0.12);
+  color: #ffd1d1;
+}
 .tab-dropdown-icon {
   width: 18px;
   height: 18px;
@@ -1000,6 +833,9 @@ body {
 .tab-dropdown-icon.antigravity-icon {
   color: #f5a623;
 }
+.tab-dropdown-icon.danger-icon {
+  color: #ff6b6b;
+}
 .tab-dropdown-divider {
   height: 1px;
   background: rgba(255,255,255,0.06);
@@ -1011,6 +847,7 @@ body {
 .tab-dropdown-item:hover .tab-dropdown-icon.android-icon { color: #69f0ae; }
 .tab-dropdown-item:hover .tab-dropdown-icon.antigravity-icon { color: #ffcc02; }
 .tab-dropdown-item:hover .tab-dropdown-icon.tmux-icon { color: #69f0ae; }
+.tab-dropdown-item:hover .tab-dropdown-icon.danger-icon { color: #ff8a8a; }
 
 .tab-dropdown-badge {
   margin-left: auto;
@@ -1025,6 +862,11 @@ body {
 .tab-dropdown-badge.tmux-badge {
   background: rgba(61, 220, 132, 0.12);
   color: #3ddc84;
+}
+
+.worktree-context-menu {
+  min-width: 220px;
+  z-index: 1100;
 }
 
 /* ── Terminal Container ── */
@@ -1131,6 +973,13 @@ body {
 .btn-primary:active { transform: translateY(0); }
 .btn-primary.btn-small { padding: 6px 12px; font-size: 11px; }
 .btn-primary.btn-large { padding: 11px 22px; font-size: 13.5px; }
+.btn-primary.danger-btn {
+  background: linear-gradient(135deg, #ff6b6b, #e74c3c);
+  box-shadow: 0 2px 12px rgba(231, 76, 60, 0.25);
+}
+.btn-primary.danger-btn:hover {
+  box-shadow: 0 4px 20px rgba(231, 76, 60, 0.35);
+}
 
 .btn-secondary {
   display: flex; align-items: center; gap: 6px;

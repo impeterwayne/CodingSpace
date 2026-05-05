@@ -433,6 +433,25 @@ app.whenReady().then(() => {
     }
   });
 
+  ipcMain.handle('force-remove-worktree', async (_, { projectPath, wtPath }) => {
+    try {
+      if (!projectPath || !wtPath) {
+        return { success: false, error: 'Project path and worktree path are required' };
+      }
+      if (projectPath === wtPath) {
+        return { success: false, error: 'Cannot remove the primary project worktree' };
+      }
+      const output = execSync(`git worktree remove --force "${wtPath}"`, {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      return { success: true, output: output.trim() };
+    } catch (e) {
+      return { success: false, error: e.stderr || e.message };
+    }
+  });
+
   ipcMain.handle('get-branches', async (_, projectPath) => {
     try {
       const output = execSync('git branch -a --format="%(refname:short)"', {
@@ -453,6 +472,64 @@ app.whenReady().then(() => {
         encoding: 'utf-8',
         timeout: 10000,
       });
+      return { success: true, output: output.trim() };
+    } catch (e) {
+      return { success: false, error: e.stderr || e.message };
+    }
+  });
+
+  ipcMain.handle('merge-worktree-to-branch', async (_, { projectPath, sourceBranch, targetBranch }) => {
+    try {
+      if (!projectPath || !sourceBranch || !targetBranch) {
+        return { success: false, error: 'Project path, source branch, and target branch are required' };
+      }
+      if (targetBranch.startsWith('origin/')) {
+        return { success: false, error: 'Please choose a local target branch' };
+      }
+      if (sourceBranch === targetBranch) {
+        return { success: false, error: 'Source and target branches must be different' };
+      }
+
+      const statusOutput = execSync('git status --porcelain', {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        timeout: 10000,
+      }).trim();
+
+      if (statusOutput) {
+        return { success: false, error: 'Target worktree has uncommitted changes. Commit or stash them before merging.' };
+      }
+
+      const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        timeout: 10000,
+      }).trim();
+
+      let output = '';
+      try {
+        output += execSync(`git checkout "${targetBranch}"`, {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000,
+        });
+        output += execSync(`git merge "${sourceBranch}"`, {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000,
+        });
+      } finally {
+        if (currentBranch && currentBranch !== targetBranch) {
+          try {
+            execSync(`git checkout "${currentBranch}"`, {
+              cwd: projectPath,
+              encoding: 'utf-8',
+              timeout: 30000,
+            });
+          } catch (_) {}
+        }
+      }
+
       return { success: true, output: output.trim() };
     } catch (e) {
       return { success: false, error: e.stderr || e.message };

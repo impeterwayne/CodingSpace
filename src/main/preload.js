@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('api', {
   gitFetch: (path) => ipcRenderer.invoke('git-fetch', path),
   addWorktree: (opts) => ipcRenderer.invoke('add-worktree', opts),
   removeWorktree: (opts) => ipcRenderer.invoke('remove-worktree', opts),
+  forceRemoveWorktree: (opts) => ipcRenderer.invoke('force-remove-worktree', opts),
   getBranches: (path) => ipcRenderer.invoke('get-branches', path),
   createBranch: (opts) => ipcRenderer.invoke('create-branch', opts),
+  mergeWorktreeToBranch: (opts) => ipcRenderer.invoke('merge-worktree-to-branch', opts),
 });

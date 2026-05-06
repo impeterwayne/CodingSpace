@@ -34,6 +34,9 @@ const WT_THEME = {
 // ── State ──────────────────────────────────────────────
 const state = {
   projects: [],
+  settings: {
+    worktreeBasePath: '',
+  },
   useExternalWt: false,
   useTmux: true,
   workspaceSidebarCollapsed: false,
@@ -61,6 +64,7 @@ const dom = {
   btnMinimize: $('#btn-minimize'),
   btnMaximize: $('#btn-maximize'),
   btnClose: $('#btn-close'),
+  btnSettings: $('#btn-settings'),
   btnAddProject: $('#btn-add-project'),
   btnAddFirst: $('#btn-add-first'),
   btnRefreshAll: $('#btn-refresh-all'),
@@ -111,6 +115,8 @@ dom.toggleTmux.addEventListener('change', (e) => {
 dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
   setWorkspaceSidebarCollapsed(!state.workspaceSidebarCollapsed);
 });
+
+dom.btnSettings.addEventListener('click', showSettingsModal);
 
 // ── Add Project ────────────────────────────────────────
 dom.btnAddProject.addEventListener('click', addProject);
@@ -197,6 +203,7 @@ const iconRaw = {
   download: loadIcon('download'),
   gitFork: loadIcon('git-fork'),
   chevron: loadIcon('chevron'),
+  settings: loadIcon('settings'),
   close: loadIcon('close'),
   opencode: loadIcon('opencode'),
   gemini: loadIcon('gemini'),
@@ -215,6 +222,7 @@ const icons = {
   download: iconSvg(iconRaw.download, 12),
   gitFork: iconSvg(iconRaw.gitFork, 14),
   chevron: iconSvg(iconRaw.chevron, 10),
+  settings: iconSvg(iconRaw.settings, 12),
   close: iconSvg(iconRaw.close, 8),
   opencode: iconSvg(iconRaw.opencode, 12),
   gemini: iconSvg(iconRaw.gemini, 12),
@@ -1097,11 +1105,19 @@ function handleDropdownOutsideClick(e) {
 
 function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
+  const canAddSubWorktree = canCreateNestedWorktree(project, wt);
 
   const menu = document.createElement('div');
   menu.className = 'worktree-context-menu tab-dropdown';
   menu.id = 'worktree-context-menu';
   menu.innerHTML = `
+    ${canAddSubWorktree ? `
+    <button class="tab-dropdown-item" data-action="add-sub-worktree">
+      <span class="tab-dropdown-icon terminal-icon">${icons.plus}</span>
+      <span>Add nested worktree</span>
+    </button>
+    <div class="tab-dropdown-divider"></div>
+    ` : ''}
     <button class="tab-dropdown-item" data-action="merge-to-local-branch">
       <span class="tab-dropdown-icon terminal-icon">${icons.gitBranch}</span>
       <span>Merge to local branch</span>
@@ -1132,6 +1148,11 @@ function showWorktreeContextMenu(project, wt, x, y) {
 
     const action = item.dataset.action;
     hideWorktreeContextMenu();
+
+    if (action === 'add-sub-worktree') {
+      await showAddSubWorktreeModal(project, wt);
+      return;
+    }
 
     if (action === 'merge-to-local-branch') {
       await showMergeWorktreeModal(project, wt);
@@ -1212,6 +1233,7 @@ async function loadWorkspaces() {
     dom.loadingState.style.display = '';
   }
 
+  state.settings = (await window.api.getSettings()) || { worktreeBasePath: '' };
   state.projects = (await window.api.getWorkspaces()) || [];
   
   dom.loadingState.style.display = 'none';
@@ -1220,6 +1242,92 @@ async function loadWorkspaces() {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
   }
   renderSidebar();
+}
+
+function getWorktreeBasePath(project) {
+  const configuredBasePath = state.settings?.worktreeBasePath?.trim();
+  return configuredBasePath || `${project.path}.subworktree`;
+}
+
+function getOfficialWorktreeBasePath(project) {
+  return `${project.path}.worktrees`;
+}
+
+function normalizePathForComparison(inputPath) {
+  return String(inputPath || '')
+    .replace(/[\\/]+/g, '\\')
+    .replace(/[\\]+$/, '')
+    .toLowerCase();
+}
+
+function classifyWorktreeLocation(project, wt) {
+  if (!project || !wt?.path) return 'subworktree';
+
+  const projectPath = normalizePathForComparison(project.path);
+  const worktreePath = normalizePathForComparison(wt.path);
+  const officialBasePath = normalizePathForComparison(getOfficialWorktreeBasePath(project));
+  const nestedBasePath = normalizePathForComparison(getWorktreeBasePath(project));
+
+  if (worktreePath === projectPath) return 'root';
+  if (worktreePath === officialBasePath || worktreePath.startsWith(`${officialBasePath}\\`)) return 'official';
+  if (worktreePath === nestedBasePath || worktreePath.startsWith(`${nestedBasePath}\\`)) return 'subworktree';
+  return 'subworktree';
+}
+
+function canCreateNestedWorktree(project, wt) {
+  return classifyWorktreeLocation(project, wt) !== 'root';
+}
+
+function getWorktreeDisplayMeta(project, wt) {
+  const location = classifyWorktreeLocation(project, wt);
+
+  switch (location) {
+    case 'root':
+      return { location, badge: 'local', title: 'Local worktree' };
+    case 'official':
+      return { location, badge: 'official', title: 'Official worktree location' };
+    case 'subworktree':
+      return { location, badge: 'sub', title: 'Subworktree location' };
+    default:
+      return { location: 'subworktree', badge: 'sub', title: 'Subworktree location' };
+  }
+}
+
+function getNestedWorktreeParentPath(project, wt) {
+  if (classifyWorktreeLocation(project, wt) !== 'subworktree') return null;
+  if (!wt.branch) return null;
+
+  const parentBranch = state.settings?.subworktreeBranchParents?.[wt.branch];
+  if (!parentBranch) return null;
+
+  const parent = (project.worktrees || []).find((candidate) => {
+    if (!candidate?.branch) return false;
+    return candidate.branch === parentBranch && classifyWorktreeLocation(project, candidate) !== 'subworktree';
+  });
+
+  return parent?.path || null;
+}
+
+function buildWorktreeTree(project) {
+  const worktrees = project.worktrees || [];
+  const nodesByPath = new Map();
+
+  for (const wt of worktrees) {
+    nodesByPath.set(wt.path, { wt, children: [] });
+  }
+
+  const roots = [];
+  for (const wt of worktrees) {
+    const node = nodesByPath.get(wt.path);
+    const parentPath = getNestedWorktreeParentPath(project, wt);
+    if (parentPath && nodesByPath.has(parentPath)) {
+      nodesByPath.get(parentPath).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
 }
 
 function renderSidebar() {
@@ -1239,8 +1347,8 @@ function renderSidebar() {
 
 function sidebarProjectHTML(project, index) {
   const expanded = state.expandedProjects.has(project.path);
-  const wtItems = (project.worktrees || [])
-    .map((wt) => sidebarWtItemHTML(project, wt)).join('');
+  const wtItems = buildWorktreeTree(project)
+    .map((node) => sidebarWtItemHTML(project, node)).join('');
 
   return `
     <div class="sidebar-project" data-project="${esc(project.path)}" style="animation-delay:${index * 0.04}s">
@@ -1265,17 +1373,23 @@ function sidebarProjectHTML(project, index) {
   `;
 }
 
-function sidebarWtItemHTML(project, wt) {
+function sidebarWtItemHTML(project, node, depth = 0) {
+  const { wt, children } = node;
   const dotClass = wt.bare ? 'bare' : 'loading';
+  const meta = getWorktreeDisplayMeta(project, wt);
+  const childHtml = children.map((child) => sidebarWtItemHTML(project, child, depth + 1)).join('');
   return `
-    <div class="sidebar-wt-item" data-wt-path="${esc(wt.path)}" data-wt-name="${esc(wt.name)}" data-wt-id="${esc(wt.id)}" data-project-path="${esc(project.path)}">
-      <span class="sidebar-wt-dot ${dotClass}" id="wt-dot-${esc(wt.id)}"></span>
-      <div class="sidebar-wt-info">
-        <div class="sidebar-wt-name">${esc(wt.name)}</div>
-        <div class="sidebar-wt-branch">${esc(wt.branch || (wt.detached ? 'HEAD detached' : wt.bare ? 'bare' : '...'))}</div>
+    <div class="sidebar-wt-node depth-${depth}">
+      <div class="sidebar-wt-item" data-wt-path="${esc(wt.path)}" data-wt-name="${esc(wt.name)}" data-wt-id="${esc(wt.id)}" data-project-path="${esc(project.path)}" style="margin-left:${depth * 16}px;">
+        <span class="sidebar-wt-dot ${dotClass}" id="wt-dot-${esc(wt.id)}"></span>
+        <div class="sidebar-wt-info">
+          <div class="sidebar-wt-name">${esc(wt.name)} <span class="worktree-location-badge worktree-location-${meta.location}" title="${esc(meta.title)}">${esc(meta.badge)}</span></div>
+          <div class="sidebar-wt-branch">${esc(wt.branch || (wt.detached ? 'HEAD detached' : wt.bare ? 'bare' : '...'))}</div>
+        </div>
+        <div class="sidebar-wt-actions">
+        </div>
       </div>
-      <div class="sidebar-wt-actions">
-      </div>
+      ${childHtml ? `<div class="sidebar-wt-children">${childHtml}</div>` : ''}
     </div>
   `;
 }
@@ -1619,6 +1733,50 @@ async function showCreateBranchModal(project) {
   });
 }
 
+async function showSettingsModal() {
+  dom.modalTitle.textContent = 'Settings';
+
+  dom.modalBody.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Sub Worktree Base Path</label>
+      <input class="form-input" id="settings-worktree-base-path" placeholder="Leave empty to use projectname.subworktree" autocomplete="off" spellcheck="false" />
+      <p class="form-hint">Set where sub worktrees are stored. Leave it empty to use the default <code>projectname.subworktree</code> location.</p>
+    </div>
+  `;
+
+  const basePathInput = dom.modalBody.querySelector('#settings-worktree-base-path');
+  basePathInput.value = state.settings?.worktreeBasePath || '';
+
+  dom.modalFooter.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel">Cancel</button>
+    <button class="btn-primary" id="modal-confirm">${icons.settings} Save Settings</button>
+  `;
+  showModal();
+  setTimeout(() => basePathInput.focus(), 100);
+
+  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
+  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
+    const btn = dom.modalFooter.querySelector('#modal-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+    const settings = await window.api.updateSettings({
+      worktreeBasePath: basePathInput.value,
+    });
+
+    state.settings = settings || { worktreeBasePath: '' };
+    showToast('Settings saved', 'success');
+    hideModal();
+  });
+
+  basePathInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dom.modalFooter.querySelector('#modal-confirm').click();
+    }
+  });
+}
+
 // ── Add Worktree Modal ─────────────────────────────────
 async function showAddWorktreeModal(project) {
   dom.modalTitle.textContent = 'Add Worktree';
@@ -1626,7 +1784,7 @@ async function showAddWorktreeModal(project) {
   const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
   const availableBranches = branches.filter((b) => !existingWtBranches.includes(b) && !b.startsWith('origin/'));
 
-  const worktreesDir = `${project.path}.worktrees`;
+  const officialWorktreesDir = getOfficialWorktreeBasePath(project);
 
   dom.modalBody.innerHTML = `
     <div class="form-group">
@@ -1637,10 +1795,20 @@ async function showAddWorktreeModal(project) {
       <label class="form-label">Worktree Path</label>
       <input class="form-input" id="wt-path-input" />
     </div>
+    <p class="form-hint">This creates an official worktree under <code>projectname.worktrees</code>. To add a subworktree, right-click an official worktree and choose <strong>Add sub worktree</strong>.</p>
   `;
 
   const pathInput = dom.modalBody.querySelector('#wt-path-input');
   const comboContainer = dom.modalBody.querySelector('.branch-combo');
+
+  function updateWorktreePath(branch) {
+    if (!branch) {
+      pathInput.value = '';
+      return;
+    }
+
+    pathInput.value = `${officialWorktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
+  }
 
   const combo = setupBranchCombo({
     containerEl: comboContainer,
@@ -1648,11 +1816,7 @@ async function showAddWorktreeModal(project) {
     placeholder: 'Search or create a branch...',
     showCreateOption: true,
     onSelect: (branch) => {
-      if (branch) {
-        pathInput.value = `${worktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
-      } else {
-        pathInput.value = '';
-      }
+      updateWorktreePath(branch);
     },
   });
 
@@ -1678,6 +1842,7 @@ async function showAddWorktreeModal(project) {
     btn.innerHTML = '<span class="spinner"></span> Creating...';
     const result = await window.api.addWorktree({
       projectPath: project.path,
+      sourceWorktreePath: project.path,
       branchName: selectedBranch,
       wtPath,
       createBranch: isNew,
@@ -1691,6 +1856,107 @@ async function showAddWorktreeModal(project) {
       showToast(`Failed: ${result.error}`, 'error');
       btn.disabled = false;
       btn.innerHTML = 'Create Worktree';
+    }
+  });
+}
+
+async function showAddSubWorktreeModal(project, sourceWorktree) {
+  if (!canCreateNestedWorktree(project, sourceWorktree)) {
+    showToast('Nested worktrees cannot be created from the local worktree', 'error');
+    return;
+  }
+
+  dom.modalTitle.textContent = 'Add Nested Worktree';
+  const branches = await window.api.getBranches(project.path);
+  const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
+  const availableBranches = branches.filter((b) => !existingWtBranches.includes(b) && !b.startsWith('origin/'));
+  const subWorktreesDir = getWorktreeBasePath(project);
+
+  dom.modalBody.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Source Worktree</label>
+      <input class="form-input" value="${esc(sourceWorktree.name)}" disabled />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Branch</label>
+      ${branchComboHTML()}
+    </div>
+    <div class="form-group">
+      <label class="form-label">Worktree Path</label>
+      <input class="form-input" id="sub-wt-path-input" />
+    </div>
+    <p class="form-hint">This creates a normal worktree from <strong>${esc(sourceWorktree.name)}</strong> and stores it under <code>projectname.subworktree</code> unless you changed the setting.</p>
+  `;
+
+  const pathInput = dom.modalBody.querySelector('#sub-wt-path-input');
+  const comboContainer = dom.modalBody.querySelector('.branch-combo');
+
+  function updateSubWorktreePath(branch) {
+    if (!branch) {
+      pathInput.value = '';
+      return;
+    }
+
+    pathInput.value = `${subWorktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
+  }
+
+  const combo = setupBranchCombo({
+    containerEl: comboContainer,
+    branches: availableBranches,
+    placeholder: 'Search or create a branch...',
+    showCreateOption: true,
+    onSelect: (branch) => {
+      updateSubWorktreePath(branch);
+    },
+  });
+
+  dom.modalFooter.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel">Cancel</button>
+    <button class="btn-primary" id="modal-confirm">Create Nested Worktree</button>
+  `;
+  showModal();
+  setTimeout(() => combo.focus(), 100);
+
+  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
+  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
+    const { branch: selectedBranch, isNew } = combo.getSelected();
+    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
+    const wtPath = pathInput.value;
+    if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
+    if (isNew && /[\s~^:?*\[\\]/.test(selectedBranch)) {
+      showToast('Invalid branch name', 'error');
+      return;
+    }
+
+    const btn = dom.modalFooter.querySelector('#modal-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating...';
+
+    const result = await window.api.addWorktree({
+      projectPath: project.path,
+      sourceWorktreePath: project.path,
+      branchName: selectedBranch,
+      wtPath,
+      createBranch: isNew,
+    });
+
+    if (result.success) {
+      const nextBranchParents = {
+        ...(state.settings?.subworktreeBranchParents || {}),
+        [selectedBranch]: sourceWorktree.branch,
+      };
+      state.settings = await window.api.updateSettings({
+        ...state.settings,
+        subworktreeBranchParents: nextBranchParents,
+      });
+      showToast(`Worktree created: ${selectedBranch}`, 'success');
+      hideModal();
+      await window.api.refreshWorktrees(project.path);
+      await loadWorkspaces();
+    } else {
+      showToast(`Failed: ${result.error}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Create Nested Worktree';
     }
   });
 }

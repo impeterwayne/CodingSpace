@@ -6,20 +6,46 @@ const os = require('os');
 const pty = require('node-pty');
 
 // ── State ──────────────────────────────────────────────
-let workspaceConfig = { projects: [] };
+let workspaceConfig = { projects: [], settings: { worktreeBasePath: '', subworktreeBranchParents: {} } };
 const configPath = path.join(app.getPath('userData'), 'workspaces.json');
 let mainWindow = null;
 const ptyProcesses = new Map(); // id -> pty process
 
 // ── Config persistence ─────────────────────────────────
+function normalizeSettings(settings) {
+  const nextSettings = settings && typeof settings === 'object' ? settings : {};
+  const nextBranchParents = nextSettings.subworktreeBranchParents && typeof nextSettings.subworktreeBranchParents === 'object'
+    ? nextSettings.subworktreeBranchParents
+    : {};
+  return {
+    worktreeBasePath: typeof nextSettings.worktreeBasePath === 'string'
+      ? nextSettings.worktreeBasePath.trim()
+      : '',
+    subworktreeBranchParents: Object.fromEntries(
+      Object.entries(nextBranchParents)
+        .filter(([branch, parent]) => typeof branch === 'string' && branch.trim() && typeof parent === 'string' && parent.trim())
+        .map(([branch, parent]) => [branch.trim(), parent.trim()])
+    ),
+  };
+}
+
+function normalizeWorkspaceConfig(config) {
+  const nextConfig = config && typeof config === 'object' ? config : {};
+  return {
+    projects: Array.isArray(nextConfig.projects) ? nextConfig.projects : [],
+    settings: normalizeSettings(nextConfig.settings),
+  };
+}
+
 function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
-      workspaceConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      workspaceConfig = normalizeWorkspaceConfig(JSON.parse(fs.readFileSync(configPath, 'utf-8')));
     }
   } catch (e) {
     console.error('Failed to load config:', e);
   }
+  workspaceConfig = normalizeWorkspaceConfig(workspaceConfig);
   return workspaceConfig;
 }
 
@@ -238,6 +264,12 @@ app.whenReady().then(() => {
   // ── Workspace API ────────────────────────────────────
 
   ipcMain.handle('get-workspaces', () => workspaceConfig.projects);
+  ipcMain.handle('settings:get', () => normalizeSettings(workspaceConfig.settings));
+  ipcMain.handle('settings:update', (_, nextSettings) => {
+    workspaceConfig.settings = normalizeSettings(nextSettings);
+    saveConfig();
+    return workspaceConfig.settings;
+  });
 
   ipcMain.handle('add-project', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -486,7 +518,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('add-worktree', async (_, { projectPath, branchName, wtPath, createBranch }) => {
+  ipcMain.handle('add-worktree', async (_, { projectPath, sourceWorktreePath, branchName, wtPath, createBranch }) => {
     try {
       let cmd;
       if (createBranch) {
@@ -496,7 +528,7 @@ app.whenReady().then(() => {
         cmd = `git worktree add "${wtPath}" ${branchName}`;
       }
       const output = execSync(cmd, {
-        cwd: projectPath,
+        cwd: sourceWorktreePath || projectPath,
         encoding: 'utf-8',
         timeout: 30000,
       });

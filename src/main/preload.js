@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Workspace management ──
   getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
   addProject: () => ipcRenderer.invoke('add-project'),
   removeProject: (path) => ipcRenderer.invoke('remove-project', path),
   refreshWorktrees: (path) => ipcRenderer.invoke('refresh-worktrees', path),

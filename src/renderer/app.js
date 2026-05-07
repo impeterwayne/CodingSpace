@@ -2125,3 +2125,21 @@ document.addEventListener('DOMContentLoaded', () => {
   setTabSidebarCollapsed(loadTabSidebarCollapsed(), { persist: false });
   loadWorkspaces();
 });
+
+// ── Cleanup on exit ────────────────────────────────────
+window.addEventListener('beforeunload', () => {
+  // Kill all prewarmed background sessions
+  for (const toolKey of Object.keys(PREWARM_TOOLS)) {
+    cleanupPrewarm(toolKey);
+  }
+
+  // Kill all active terminal PTY processes
+  for (const [id, termInfo] of state.terminals) {
+    try {
+      termInfo.cleanup();
+      termInfo.term.dispose();
+      window.api.ptyKill(id);
+    } catch (_) {}
+  }
+  state.terminals.clear();
+});

@@ -2,7 +2,9 @@ node_modules/
 dist/
 out/
 release/
-build/
+build/*
+!build/icon.ico
+!build/icon.png
 *.log
 .DS_Store
 Thumbs.db

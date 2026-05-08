@@ -151,9 +151,19 @@ function shellQuoteWindowsArg(value) {
   return `"${normalized.replace(/"/g, '""')}"`;
 }
 
-function resolveToolLaunch(command) {
+function buildShellCommand(commandOrPath, args = []) {
+  return [commandOrPath, ...args].map(shellQuoteWindowsArg).join(' ');
+}
+
+function resolveToolLaunch(command, extraArgs = []) {
+  const launchArgs = Array.isArray(extraArgs) ? extraArgs.map((arg) => String(arg)) : [];
+
   if (process.platform !== 'win32') {
-    return { file: command, args: [], shellCommand: command };
+    return {
+      file: command,
+      args: launchArgs,
+      shellCommand: buildShellCommand(command, launchArgs),
+    };
   }
 
   try {
@@ -167,25 +177,25 @@ function resolveToolLaunch(command) {
       || matches.find((match) => /\.exe$/i.test(match))
       || matches[0];
     if (!resolvedPath) {
-      return { file: command, args: [], shellCommand: command };
+      throw new Error(`Tool not found on PATH: ${command}`);
     }
 
     const ext = path.extname(resolvedPath).toLowerCase();
     if (ext === '.cmd' || ext === '.bat') {
       return {
         file: 'cmd.exe',
-        args: ['/d', '/c', resolvedPath],
-        shellCommand: shellQuoteWindowsArg(resolvedPath),
+        args: ['/d', '/c', resolvedPath, ...launchArgs],
+        shellCommand: buildShellCommand(resolvedPath, launchArgs),
       };
     }
 
     return {
       file: resolvedPath,
-      args: [],
-      shellCommand: shellQuoteWindowsArg(resolvedPath),
+      args: launchArgs,
+      shellCommand: buildShellCommand(resolvedPath, launchArgs),
     };
-  } catch (_) {
-    return { file: command, args: [], shellCommand: command };
+  } catch (error) {
+    throw new Error(error?.message || `Tool not found on PATH: ${command}`);
   }
 }
 
@@ -244,7 +254,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(app.getAppPath(), 'src', 'renderer', 'index.html'));
   return mainWindow;
 }
 
@@ -371,9 +381,9 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('pty:create-tool', (_, { cwd, id, command }) => {
+  ipcMain.handle('pty:create-tool', (_, { cwd, id, command, args = [] }) => {
     try {
-      const { file: toolPath, args: toolArgs } = resolveToolLaunch(command);
+      const { file: toolPath, args: toolArgs } = resolveToolLaunch(command, args);
 
       const ptyProc = pty.spawn(toolPath, toolArgs, {
         name: 'xterm-256color',
@@ -404,9 +414,9 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('tool:resolve-launch', (_, { command }) => {
+  ipcMain.handle('tool:resolve-launch', (_, { command, args = [] }) => {
     try {
-      const { shellCommand } = resolveToolLaunch(command);
+      const { shellCommand } = resolveToolLaunch(command, args);
       return { success: true, shellCommand };
     } catch (e) {
       return { success: false, error: e.message };

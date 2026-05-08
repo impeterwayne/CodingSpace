@@ -1015,6 +1015,10 @@ body {
   background: rgba(61, 220, 132, 0.12);
   color: #3ddc84;
 }
+.tab-dropdown-badge.danger-badge {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff8a8a;
+}
 
 .worktree-context-menu {
   min-width: 220px;

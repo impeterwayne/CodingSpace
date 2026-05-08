@@ -230,6 +230,91 @@ const icons = {
   antigravity: iconSvg(iconRaw.antigravity, 12),
 };
 
+const TOOL_TABS = {
+  opencode: {
+    key: 'opencode',
+    action: 'new-opencode',
+    command: 'opencode',
+    label: 'OpenCode',
+    iconKey: 'opencode',
+    prewarm: true,
+    launchArgs: [],
+    title: 'Open OpenCode in a new terminal tab',
+  },
+  gemini: {
+    key: 'gemini',
+    action: 'new-gemini',
+    command: 'gemini',
+    label: 'Gemini',
+    iconKey: 'gemini',
+    prewarm: true,
+    launchArgs: [],
+    title: 'Open Gemini in a new terminal tab',
+  },
+  claudeDangerous: {
+    key: 'claudeDangerous',
+    action: 'new-claude-dangerous',
+    command: 'claude',
+    label: 'Claude (skip permissions)',
+    iconKey: 'terminal',
+    prewarm: false,
+    launchArgs: ['--dangerously-skip-permissions'],
+    title: 'Open Claude with --dangerously-skip-permissions. Only use this in isolated/sandboxed environments.',
+    warningBadge: 'danger',
+  },
+};
+
+const PREWARM_TOOLS = Object.fromEntries(
+  Object.values(TOOL_TABS)
+    .filter((tool) => tool.prewarm)
+    .map((tool) => [tool.key, tool])
+);
+
+function getToolTabByAction(action) {
+  return Object.values(TOOL_TABS).find((tool) => tool.action === action) || null;
+}
+
+function getToolTabByKey(toolKey) {
+  return TOOL_TABS[toolKey] || null;
+}
+
+async function resolveToolLaunchOrThrow(command, launchArgs = []) {
+  const resolved = await window.api.resolveToolLaunch({ command, args: launchArgs });
+  if (!resolved?.success || !resolved.shellCommand) {
+    throw new Error(resolved?.error || `Failed to resolve launch command for ${command}`);
+  }
+  return resolved.shellCommand;
+}
+
+function buildToolTabLabel(tool, wtName, useTmux) {
+  const tmuxLabel = useTmux ? 'tmux+' : '';
+  return `${tmuxLabel}${tool.label}: ${wtName}`;
+}
+
+function buildToolSessionName(tool, wtName) {
+  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
+  const safeToolName = tool.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  return `${safeName}_${safeToolName}_${Date.now()}`;
+}
+
+function renderToolDropdownItems(tmuxBadge) {
+  return Object.values(TOOL_TABS)
+    .map((tool) => {
+      const warningBadge = tool.warningBadge
+        ? `<span class="tab-dropdown-badge danger-badge">${tool.warningBadge}</span>`
+        : '';
+      return `
+      <button class="tab-dropdown-item" data-action="${tool.action}" title="${esc(tool.title || tool.label)}">
+        <span class="tab-dropdown-icon ${tool.iconKey}-icon">${icons[tool.iconKey]}</span>
+        <span>${tool.label}</span>
+        ${warningBadge}
+        ${tmuxBadge}
+      </button>
+    `;
+    })
+    .join('');
+}
+
 // ═══════════════════════════════════════════════════════
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
@@ -342,7 +427,7 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
  * process — giving it proper terminal allocation (fixes opencode/gemini not
  * spawning when typed into a shell).
  */
-async function createDirectToolTerminal(cwd, name, { command, worktreePath = '' } = {}) {
+async function createDirectToolTerminal(cwd, name, { command, launchArgs = [], worktreePath = '' } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd;
 
@@ -382,11 +467,7 @@ async function createDirectToolTerminal(cwd, name, { command, worktreePath = '' 
 
   let launchCommand;
   try {
-    const resolved = await window.api.resolveToolLaunch({ command });
-    if (!resolved?.success || !resolved.shellCommand) {
-      throw new Error(resolved?.error || `Failed to resolve launch command for ${command}`);
-    }
-    launchCommand = resolved.shellCommand;
+    launchCommand = await resolveToolLaunchOrThrow(command, launchArgs);
   } catch (error) {
     showToast(`Failed to launch ${command}: ${error.message}`, 'error');
     window.api.ptyKill(id);
@@ -470,18 +551,12 @@ function buildTmuxLaunchCommand(sessionName, launchCommand) {
 // PREWARM SYSTEM — Background tool sessions
 // ═══════════════════════════════════════════════════════
 
-/** Tools that can be prewarmed */
-const PREWARM_TOOLS = {
-  opencode: { command: 'opencode', label: 'OpenCode' },
-  gemini:   { command: 'gemini',   label: 'Gemini' },
-};
-
 /**
  * Create a prewarmed background PTY for a tool session.
  * No xterm or DOM pane is created here; only the backend session is warmed.
  */
 async function createPrewarmedTerminal(toolKey) {
-  const tool = PREWARM_TOOLS[toolKey];
+  const tool = getToolTabByKey(toolKey);
   if (!tool) return;
 
   // Don't prewarm if already in progress or already warmed
@@ -505,11 +580,7 @@ async function createPrewarmedTerminal(toolKey) {
 
   let launchCommand;
   try {
-    const resolved = await window.api.resolveToolLaunch({ command: tool.command });
-    if (!resolved?.success || !resolved.shellCommand) {
-      throw new Error(resolved?.error || `Failed to resolve launch command for ${tool.command}`);
-    }
-    launchCommand = resolved.shellCommand;
+    launchCommand = await resolveToolLaunchOrThrow(tool.command, tool.launchArgs);
   } catch (error) {
     console.warn(`[prewarm] Failed to resolve launch command for ${toolKey}:`, error);
     window.api.ptyKill(id);
@@ -589,7 +660,7 @@ function promotePrewarmedTerminal(toolKey) {
   const pw = state.prewarm[toolKey];
   if (!pw) return false;
 
-  const tool = PREWARM_TOOLS[toolKey];
+  const tool = getToolTabByKey(toolKey);
   const { wtPath, wtName } = getActiveWorktreeInfo();
 
   // Check if the prewarmed session matches the current worktree and tmux setting
@@ -983,45 +1054,45 @@ function createNewTerminalTab() {
   });
 }
 
-function createToolTab(toolName, command, { useTmux = false } = {}) {
-  // Try to promote a prewarmed session first
-  const toolKey = toolName.toLowerCase().replace(/[^a-z]/g, '');
-  if (PREWARM_TOOLS[toolKey] && promotePrewarmedTerminal(toolKey)) {
-    return; // Prewarmed session promoted — instant!
+function createToolTab(toolKey, { useTmux = false } = {}) {
+  const tool = getToolTabByKey(toolKey);
+  if (!tool) {
+    showToast(`Unknown tool: ${toolKey}`, 'error');
+    return;
   }
 
-  // Fallback: no prewarm available, create from scratch
+  if (tool.prewarm && promotePrewarmedTerminal(tool.key)) {
+    return;
+  }
+
   const { wtPath, wtName } = getActiveWorktreeInfo();
-  const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
-  const tmuxLabel = useTmux ? 'tmux+' : '';
-  const tabLabel = `${tmuxLabel}${toolName}: ${wtName}`;
+  const tabLabel = buildToolTabLabel(tool, wtName, useTmux);
 
   if (useTmux) {
-    // With tmux: create shell terminal and start tmux with the tool command directly
-    const uniqueId = Date.now();
-    const sessionName = `${safeName}_${toolName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${uniqueId}`;
+    const sessionName = buildToolSessionName(tool, wtName);
     createTerminal(wtPath, tabLabel, {
       useTmux: false,
       sessionName,
       worktreePath: wtPath,
     }).then(async (id) => {
-      if (id && command) {
-        const resolved = await window.api.resolveToolLaunch({ command });
-        if (!resolved?.success || !resolved.shellCommand) {
-          showToast(`Failed to launch ${command}: ${resolved?.error || 'Unable to resolve launch command'}`, 'error');
-          return;
-        }
+      if (!id) return;
+      try {
+        const launchCommand = await resolveToolLaunchOrThrow(tool.command, tool.launchArgs);
         setTimeout(() => {
-          window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, resolved.shellCommand)}\r`);
+          window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, launchCommand)}\r`);
         }, 500);
+      } catch (error) {
+        showToast(`Failed to launch ${tool.command}: ${error.message}`, 'error');
       }
     });
-  } else {
-    createDirectToolTerminal(wtPath, tabLabel, {
-      command,
-      worktreePath: wtPath,
-    });
+    return;
   }
+
+  createDirectToolTerminal(wtPath, tabLabel, {
+    command: tool.command,
+    launchArgs: tool.launchArgs,
+    worktreePath: wtPath,
+  });
 }
 
 function showTabDropdown() {
@@ -1042,16 +1113,7 @@ function showTabDropdown() {
       <span>Terminal</span>
       ${tmuxBadge}
     </button>
-    <button class="tab-dropdown-item" data-action="new-opencode">
-      <span class="tab-dropdown-icon opencode-icon">${icons.opencode}</span>
-      <span>OpenCode</span>
-      ${tmuxBadge}
-    </button>
-    <button class="tab-dropdown-item" data-action="new-gemini">
-      <span class="tab-dropdown-icon gemini-icon">${icons.gemini}</span>
-      <span>Gemini</span>
-      ${tmuxBadge}
-    </button>
+    ${renderToolDropdownItems(tmuxBadge)}
   `;
 
   // Position relative to the + button (to the right of the vertical sidebar)
@@ -1071,16 +1133,14 @@ function showTabDropdown() {
     const action = item.dataset.action;
     hideTabDropdown();
 
-    switch (action) {
-      case 'new-terminal':
-        createNewTerminalTab();
-        break;
-      case 'new-opencode':
-        createToolTab('OpenCode', 'opencode', { useTmux: state.useTmux });
-        break;
-      case 'new-gemini':
-        createToolTab('Gemini', 'gemini', { useTmux: state.useTmux });
-        break;
+    if (action === 'new-terminal') {
+      createNewTerminalTab();
+      return;
+    }
+
+    const tool = getToolTabByAction(action);
+    if (tool) {
+      createToolTab(tool.key, { useTmux: state.useTmux });
     }
   });
 

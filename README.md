@@ -9,7 +9,7 @@ My Coding Space
 - **psmux Integration** — Automatically start psmux sessions inside the embedded terminal.
 - **Git Status Dashboard** — See branch, modified files, ahead/behind, and last commit at a glance.
 - **Quick Actions** — Open VS Code, Android Studio, Antigravity, or Windows Explorer with a single click.
-- **Quick Tools** — Launch tools like OpenCode and Gemini directly in terminal tabs.
+- **Quick Tools** — Launch tools like OpenCode, Gemini, and Claude directly in terminal tabs.
 - **Persistent Config** — Projects are saved and restored between sessions.
 
 ## Getting Started
@@ -56,8 +56,9 @@ All artifacts are written to the `release/` directory:
 
 1. Click **Add Project** to select a git repository root.
 2. Select a worktree to view its integrated terminal.
-3. Use the **+** button in the terminal tab bar to open new terminals, OpenCode, or Gemini.
-4. Use quick action buttons to open the worktree in VS Code, Android Studio, or Antigravity.
+3. Use the **+** button in the terminal tab bar to open new terminals, OpenCode, Gemini, or Claude.
+4. The Claude menu includes a **Claude (skip permissions)** option that launches `claude --dangerously-skip-permissions`. Use it only in isolated or sandboxed environments.
+5. Use quick action buttons to open the worktree in VS Code, Android Studio, or Antigravity.
 
 ## Requirements
 

@@ -8,7 +8,7 @@ const { getWorktrees: readWorktrees, getGitInfo: readGitInfo } = require('./git/
 const { createWorkspaceConfigStore } = require('../application/workspaceConfigStore');
 const { createWorkspaceService } = require('../application/workspaceService');
 const { registerWorkspaceIpc } = require('./ipc/workspaceIpc');
-const { installPtyShutdownLifecycle } = require('./process/ptyLifecycle');
+const { installPtyShutdownLifecycle, killPtyProcess } = require('./process/ptyLifecycle');
 
 // ── State ──────────────────────────────────────────────
 const configPath = path.join(app.getPath('userData'), 'workspaces.json');
@@ -93,6 +93,122 @@ function getRecentCommits(dirPath, count = 5) {
     });
   } catch (_) {
     return [];
+  }
+}
+
+function normalizeWorktreePath(targetPath) {
+  const resolvedPath = path.resolve(targetPath);
+  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+}
+
+function findWorktree(projectPath, wtPath) {
+  const normalizedWtPath = normalizeWorktreePath(wtPath);
+  return readWorktrees(projectPath, execSync, path, Buffer)
+    .find((worktree) => worktree.path && normalizeWorktreePath(worktree.path) === normalizedWtPath);
+}
+
+function isLocalBranch(projectPath, branchName) {
+  if (!branchName) {
+    return false;
+  }
+
+  try {
+    execFileSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], {
+      cwd: projectPath,
+      stdio: 'ignore',
+      timeout: 10000,
+    });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isLockRelatedRemoveError(error) {
+  const message = `${error?.stderr || ''}\n${error?.message || ''}`.toLowerCase();
+  return message.includes('permission denied')
+    || message.includes('access is denied')
+    || message.includes('device or resource busy')
+    || message.includes('used by another process')
+    || message.includes('file is being used by another process');
+}
+
+function closePtyById(id) {
+  const proc = ptyProcesses.get(id);
+  if (!proc) {
+    return false;
+  }
+
+  killPtyProcess(proc, execSync);
+  ptyProcesses.delete(id);
+  return true;
+}
+
+function removeWorktreeWithOptionalBranchDelete({ projectPath, wtPath, force = false, deleteBranch = false }) {
+  if (!projectPath || !wtPath) {
+    return { success: false, error: 'Project path and worktree path are required' };
+  }
+
+  if (normalizeWorktreePath(projectPath) === normalizeWorktreePath(wtPath)) {
+    return { success: false, error: 'Cannot remove the primary project worktree' };
+  }
+
+  const worktree = findWorktree(projectPath, wtPath);
+  if (!worktree) {
+    return { success: false, error: 'Worktree path was not found in this repository' };
+  }
+
+  if (deleteBranch) {
+    if (!worktree.branch || worktree.detached || worktree.bare) {
+      return { success: false, error: 'Cannot delete branch: worktree does not have a local branch' };
+    }
+    if (!isLocalBranch(projectPath, worktree.branch)) {
+      return { success: false, error: 'Cannot delete branch: only local branches can be deleted' };
+    }
+  }
+
+  let removeOutput = '';
+  try {
+    const removeArgs = ['worktree', 'remove'];
+    if (force) removeArgs.push('--force');
+    removeArgs.push(wtPath);
+    removeOutput = execFileSync('git', removeArgs, {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      timeout: 30000,
+    }) || '';
+  } catch (e) {
+    const errorMessage = e.stderr || e.message;
+    if (isLockRelatedRemoveError(e)) {
+      return {
+        success: false,
+        error: `${errorMessage}\nClose terminals, editors, Explorer windows, or other apps using this worktree, then retry. Admin rights usually do not fix active file locks.`,
+      };
+    }
+    return { success: false, error: errorMessage };
+  }
+
+  if (!deleteBranch) {
+    return { success: true, output: removeOutput.trim() };
+  }
+
+  try {
+    const branchOutput = execFileSync('git', ['branch', '--delete', worktree.branch], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      timeout: 30000,
+    }) || '';
+    const output = [removeOutput, branchOutput].filter(Boolean).join('\n').trim();
+    return { success: true, output, branchDeleted: true };
+  } catch (e) {
+    const branchDeleteError = e.stderr || e.message;
+    return {
+      success: false,
+      error: `Worktree removed but branch deletion failed: ${branchDeleteError}`,
+      output: removeOutput.trim(),
+      removedWorktree: true,
+      branchDeleted: false,
+    };
   }
 }
 
@@ -247,11 +363,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('pty:kill', (_, { id }) => {
-    const proc = ptyProcesses.get(id);
-    if (proc) {
-      proc.kill();
-      ptyProcesses.delete(id);
-    }
+    closePtyById(id);
     return { success: true };
   });
 
@@ -353,36 +465,12 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('remove-worktree', async (_, { projectPath, wtPath }) => {
-    try {
-      const output = execSync(`git worktree remove "${wtPath}"`, {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        timeout: 30000,
-      });
-      return { success: true, output: output.trim() };
-    } catch (e) {
-      return { success: false, error: e.stderr || e.message };
-    }
+  ipcMain.handle('remove-worktree', async (_, { projectPath, wtPath, deleteBranch = false }) => {
+    return removeWorktreeWithOptionalBranchDelete({ projectPath, wtPath, deleteBranch, force: false });
   });
 
-  ipcMain.handle('force-remove-worktree', async (_, { projectPath, wtPath }) => {
-    try {
-      if (!projectPath || !wtPath) {
-        return { success: false, error: 'Project path and worktree path are required' };
-      }
-      if (projectPath === wtPath) {
-        return { success: false, error: 'Cannot remove the primary project worktree' };
-      }
-      const output = execSync(`git worktree remove --force "${wtPath}"`, {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        timeout: 30000,
-      });
-      return { success: true, output: output.trim() };
-    } catch (e) {
-      return { success: false, error: e.stderr || e.message };
-    }
+  ipcMain.handle('force-remove-worktree', async (_, { projectPath, wtPath, deleteBranch = false }) => {
+    return removeWorktreeWithOptionalBranchDelete({ projectPath, wtPath, deleteBranch, force: true });
   });
 
   ipcMain.handle('get-branches', async (_, projectPath) => {

@@ -5,6 +5,20 @@ type OpenWindowsTerminalOptions = {
   launchArgs?: string[];
 };
 
+type WorktreeRemovalOptions = {
+  projectPath: string;
+  wtPath: string;
+  deleteBranch?: boolean;
+};
+
+type WorktreeRemovalResult = {
+  success: boolean;
+  output?: string;
+  error?: string;
+  branchDeleted?: boolean;
+  removedWorktree?: boolean;
+};
+
 declare global {
   interface Window {
     api: {
@@ -36,13 +50,14 @@ declare global {
       gitPull: (path: string) => Promise<any>;
       gitFetch: (path: string) => Promise<any>;
       addWorktree: (opts: any) => Promise<any>;
-      removeWorktree: (opts: any) => Promise<any>;
-      forceRemoveWorktree: (opts: any) => Promise<any>;
+      removeWorktree: (opts: WorktreeRemovalOptions) => Promise<WorktreeRemovalResult>;
+      forceRemoveWorktree: (opts: WorktreeRemovalOptions) => Promise<WorktreeRemovalResult>;
       getBranches: (path: string) => Promise<string[]>;
       createBranch: (opts: any) => Promise<any>;
       mergeWorktreeToBranch: (opts: any) => Promise<any>;
     };
   }
 }
+
 
 export {};

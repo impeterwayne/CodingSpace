@@ -191,11 +191,13 @@ async function openMergeWorktreeModal({ project, wt, dom, api, showToast, esc, b
   });
 }
 
-async function openForceRemoveWorktreeModal({ project, wt, dom, api, showToast, esc, configureModalFooter, showModal, hideModal, withAsyncButtonState, refreshProjectWorkspaces, icons }) {
+async function openForceRemoveWorktreeModal({ project, wt, dom, api, showToast, esc, configureModalFooter, showModal, hideModal, withAsyncButtonState, refreshProjectWorkspaces, icons, closeWorktreeOwnedSessions, releaseWorktreeOwnedSessions }) {
   if (wt.path === project.path) {
     showToast('Cannot force remove the primary project worktree', 'error');
     return;
   }
+
+  const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
   dom.modalTitle.textContent = 'Force Remove Worktree';
   dom.modalBody.innerHTML = `
@@ -207,31 +209,68 @@ async function openForceRemoveWorktreeModal({ project, wt, dom, api, showToast, 
       <label class="form-label">Path</label>
       <input class="form-input" value="${esc(wt.path)}" disabled />
     </div>
-    <p class="form-hint">This runs <code>git worktree remove --force</code> and may discard uncommitted changes in that worktree.</p>
+    ${canDeleteBranch ? `
+      <div class="form-group">
+        <label class="form-label">Branch deletion</label>
+        <label class="form-hint">
+          <input type="checkbox" id="delete-branch-toggle" />
+          <span>Delete branch <code>${esc(wt.branch)}</code> after removing this worktree. Off by default.</span>
+        </label>
+        <p class="form-hint">Leave it off to keep branch.</p>
+      </div>
+    ` : `
+      <p class="form-hint">This runs <code>git worktree remove --force</code>. Branch deletion is unavailable for detached or bare worktrees.</p>
+    `}
+    <p class="form-hint">App closes its own terminals and prewarmed tool sessions for this worktree first.</p>
+    <p class="form-hint">If another program still has files open here, removal can still fail with permission denied.</p>
+    <p class="form-hint">Force remove can discard uncommitted changes in this worktree.</p>
   `;
 
   const { 'modal-cancel': cancelBtn, 'modal-confirm': confirmBtn } = configureModalFooter([
     { id: 'modal-cancel', label: 'Cancel' },
-    { id: 'modal-confirm', label: `${icons.trash} Force Remove`, kind: 'primary', danger: true },
+    { id: 'modal-confirm', label: `${icons.trash} Force Remove Worktree`, kind: 'primary', danger: true },
   ]);
-  const defaultConfirmLabel = confirmBtn.innerHTML;
+  const baseConfirmLabel = confirmBtn.innerHTML;
+  let currentConfirmLabel = baseConfirmLabel;
+  const deleteBranchToggle = canDeleteBranch ? dom.modalBody.querySelector('#delete-branch-toggle') : null;
+
+  const syncConfirmLabel = () => {
+    if (deleteBranchToggle && deleteBranchToggle.checked) {
+      currentConfirmLabel = `${icons.trash} Force Remove + Delete Branch`;
+    } else {
+      currentConfirmLabel = baseConfirmLabel;
+    }
+    confirmBtn.innerHTML = currentConfirmLabel;
+  };
+
+  if (deleteBranchToggle) {
+    deleteBranchToggle.addEventListener('change', syncConfirmLabel);
+    syncConfirmLabel();
+  }
 
   showModal();
 
   cancelBtn.addEventListener('click', hideModal);
   confirmBtn.addEventListener('click', async () => {
-    const result = await withAsyncButtonState(confirmBtn, 'Removing...', async () => api.forceRemoveWorktree({
-      projectPath: project.path,
-      wtPath: wt.path,
-    }), defaultConfirmLabel);
+    const deleteBranch = Boolean(deleteBranchToggle && deleteBranchToggle.checked);
+    const result = await withAsyncButtonState(confirmBtn, 'Closing sessions and removing...', async () => {
+      await closeWorktreeOwnedSessions(wt.path);
+      return api.forceRemoveWorktree({
+        projectPath: project.path,
+        wtPath: wt.path,
+        deleteBranch,
+      });
+    }, currentConfirmLabel);
 
     if (result.success) {
-      showToast(`Force removed: ${wt.name}`, 'success');
+      showToast(deleteBranch ? `Removed worktree and deleted branch: ${wt.name}` : `Force removed: ${wt.name}`, 'success');
       hideModal();
       await refreshProjectWorkspaces(project.path);
+      await releaseWorktreeOwnedSessions(wt.path);
       return;
     }
 
+    await releaseWorktreeOwnedSessions(wt.path);
     showToast(`Failed: ${result.error}`, 'error');
   });
 }

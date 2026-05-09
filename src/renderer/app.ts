@@ -66,6 +66,7 @@ const state: {
   terminalCounter: number;
   prewarm: { opencode: any; gemini: any };
   prewarmInProgress: { opencode: boolean; gemini: boolean };
+  prewarmSuspendedWorktrees: Set<string>;
 } = {
   projects: [],
   settings: {
@@ -91,6 +92,7 @@ const state: {
     opencode: false,
     gemini: false,
   },
+  prewarmSuspendedWorktrees: new Set(),
 };
 
 // ── DOM Refs ───────────────────────────────────────────
@@ -734,7 +736,7 @@ async function createPrewarmedTerminal(toolKey) {
 
   // Need an active worktree to prewarm against
   const wtPath = state.activeWorktreePath;
-  if (!wtPath) return;
+  if (!wtPath || state.prewarmSuspendedWorktrees.has(wtPath)) return;
 
   state.prewarmInProgress[toolKey] = true;
 
@@ -767,7 +769,11 @@ async function createPrewarmedTerminal(toolKey) {
     if (exitId !== id) return;
     if (state.prewarm[toolKey]?.id !== id) return;
     cleanupPrewarm(toolKey);
-    setTimeout(() => createPrewarmedTerminal(toolKey), 1000);
+    if (state.prewarmSuspendedWorktrees.has(wtPath)) return;
+    setTimeout(() => {
+      if (state.prewarmSuspendedWorktrees.has(wtPath)) return;
+      createPrewarmedTerminal(toolKey);
+    }, 1000);
   });
 
   // Send initial resize + launch the tool command when needed
@@ -928,6 +934,28 @@ function getTerminalsForWorktree(wtPath) {
     if (info.worktreePath === wtPath) ids.push(id);
   }
   return ids;
+}
+
+async function closeWorktreeOwnedSessions(wtPath) {
+  state.prewarmSuspendedWorktrees.add(wtPath);
+
+  const terminalIds = [...getTerminalsForWorktree(wtPath)];
+  for (const id of terminalIds) {
+    closeTerminal(id);
+  }
+
+  for (const toolKey of Object.keys(PREWARM_TOOLS)) {
+    if (state.prewarm[toolKey]?.worktreePath === wtPath) {
+      cleanupPrewarm(toolKey);
+    }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+
+async function releaseWorktreeOwnedSessions(wtPath) {
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  state.prewarmSuspendedWorktrees.delete(wtPath);
 }
 
 /** Rebuild the tab bar to show only terminals for the given worktree */
@@ -1308,6 +1336,7 @@ function handleDropdownOutsideClick(e) {
 function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
   const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt, state.settings);
+  const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
   const menu = showPositionedMenu({
     id: 'worktree-context-menu',
@@ -1318,7 +1347,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
       ${canAddSubWorktree ? `${menuItemHTML({ action: 'add-sub-worktree', icon: icons.plus, label: 'Add nested worktree' })}${menuDividerHTML()}` : ''}
       ${menuItemHTML({ action: 'merge-to-local-branch', icon: icons.gitBranch, label: 'Merge to local branch' })}
       ${menuDividerHTML()}
-      ${menuItemHTML({ action: 'force-remove-worktree', icon: icons.trash, label: 'Force remove worktree', danger: true })}
+      ${menuItemHTML({ action: 'force-remove-worktree', icon: icons.trash, label: 'Force remove worktree', title: canDeleteBranch ? `Force remove worktree. Modal can delete branch ${wt.branch}.` : 'Force remove worktree. Branch deletion unavailable for this worktree.', danger: true })}
     `,
     outsideClickHandler: handleWorktreeContextMenuOutsideClick,
   });
@@ -1865,6 +1894,8 @@ async function showForceRemoveWorktreeModal(project, wt) {
     withAsyncButtonState,
     refreshProjectWorkspaces,
     icons,
+    closeWorktreeOwnedSessions,
+    releaseWorktreeOwnedSessions,
   });
 }
 

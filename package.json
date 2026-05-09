@@ -1,7 +1,7 @@
 {
   "name": "codingspace",
   "version": "1.0.0",
-  "description": "Terminal workspace manager with git worktree and tmux support",
+  "description": "Terminal workspace manager with git worktree support",
   "main": "dist/main/main.js",
   "scripts": {
     "build:main": "esbuild src/main/main.ts --outfile=dist/main/main.js --platform=node --format=cjs --bundle --external:electron --external:node-pty",
@@ -16,7 +16,6 @@
   "keywords": [
     "terminal",
     "worktree",
-    "tmux",
     "workspace"
   ],
   "author": "",

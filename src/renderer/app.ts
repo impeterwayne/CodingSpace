@@ -238,6 +238,8 @@ const iconRaw = {
   close: loadIcon('close'),
   opencode: loadIcon('opencode'),
   gemini: loadIcon('gemini'),
+  claude: loadIcon('claude'),
+  'windows-terminal': loadIcon('windows-terminal'),
   android: loadIcon('android'),
   antigravity: loadIcon('antigravity'),
 };
@@ -257,6 +259,8 @@ const icons = {
   close: iconSvg(iconRaw.close, 8),
   opencode: iconSvg(iconRaw.opencode, 12),
   gemini: iconSvg(iconRaw.gemini, 12),
+  claude: iconSvg(iconRaw.claude, 12),
+  'windows-terminal': iconSvg(iconRaw['windows-terminal'], 12),
   android: iconSvg(iconRaw.android, 12),
   antigravity: iconSvg(iconRaw.antigravity, 12),
 };
@@ -287,7 +291,7 @@ const TOOL_TABS: Record<string, ToolTab> = {
     action: 'new-claude-dangerous',
     command: 'claude',
     label: 'Claude (skip permissions)',
-    iconKey: 'terminal',
+    iconKey: 'claude',
     prewarm: false,
     launchArgs: ['--dangerously-skip-permissions'],
     title: 'Open Claude with --dangerously-skip-permissions. Only use this in isolated/sandboxed environments.',
@@ -328,12 +332,13 @@ function buildToolSessionName(tool, wtName) {
   return `${safeName}_${safeToolName}_${Date.now()}`;
 }
 
-function menuItemHTML({ action, icon, label, title = '', badges = [], danger = false }) {
+function menuItemHTML({ action, icon, label, title = '', badges = [], danger = false, iconClass = 'terminal-icon' }) {
   const className = `tab-dropdown-item${danger ? ' danger' : ''}`;
   const badgeHtml = badges.filter(Boolean).join('');
+  const appliedIconClass = danger ? 'danger-icon' : iconClass;
   return `
     <button class="${className}" data-action="${action}"${title ? ` title="${esc(title)}"` : ''}>
-      <span class="tab-dropdown-icon ${danger ? 'danger-icon' : 'terminal-icon'}">${icon}</span>
+      <span class="tab-dropdown-icon ${appliedIconClass}">${icon}</span>
       <span>${label}</span>
       ${badgeHtml}
     </button>
@@ -352,10 +357,11 @@ function renderToolDropdownItems() {
         : '';
       return menuItemHTML({
         action: tool.action,
-        icon: icons[tool.iconKey],
+        icon: icons[tool.iconKey] || icons.terminal,
         label: tool.label,
         title: tool.title || tool.label,
         badges: [warningBadge],
+        iconClass: `${tool.iconKey}-icon`,
       });
     })
     .join('');
@@ -483,7 +489,7 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
 
-async function createTerminal(cwd, name, { worktreePath = '' } = {}) {
+async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'terminal' } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
 
@@ -552,7 +558,7 @@ async function createTerminal(cwd, name, { worktreePath = '' } = {}) {
 
   // Store terminal info (with worktree association)
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey,
     cleanup: () => {
       cleanupData();
       cleanupExit();
@@ -583,8 +589,8 @@ async function createTerminal(cwd, name, { worktreePath = '' } = {}) {
  * process — giving it proper terminal allocation (fixes opencode/gemini not
  * spawning when typed into a shell).
  */
-async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string } = {}) {
-  const { command, launchArgs = [], worktreePath = '' } = options;
+async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string; iconKey?: string } = {}) {
+  const { command, launchArgs = [], worktreePath = '', iconKey = 'terminal' } = options;
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd;
 
@@ -650,7 +656,7 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
   });
 
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey,
     cleanup: () => {
       cleanupData();
       cleanupExit();
@@ -850,6 +856,7 @@ function promotePrewarmedTerminal(toolKey) {
     name: tabLabel,
     cwd: pw.cwd,
     worktreePath: pw.worktreePath,
+    iconKey: tool.iconKey,
     cleanup,
   });
 
@@ -941,11 +948,15 @@ function rebuildTabsForWorktree(wtPath) {
 
 /** Insert a single tab button into the vertical tab list */
 function insertTab(id, name) {
+  const info = state.terminals.get(id);
+  const iconKey = info?.iconKey || 'terminal';
+  const iconMarkup = icons[iconKey] || icons.terminal;
+  const iconClass = `${iconKey}-icon`;
   const tab = document.createElement('button');
   tab.className = 'terminal-tab';
   tab.dataset.termId = id;
   tab.innerHTML = `
-    <span class="terminal-tab-icon">${icons.terminal}</span>
+    <span class="terminal-tab-icon ${iconClass}">${iconMarkup}</span>
     <span class="terminal-tab-name">${esc(name)}</span>
     <button class="terminal-tab-close" data-close-term="${id}" title="Close">${icons.close}</button>
   `;
@@ -1223,6 +1234,7 @@ function createNewTerminalTab() {
   const count = getTerminalsForWorktree(wtPath).length + 1;
   createTerminal(wtPath, `${wtName} (${count})`, {
     worktreePath: wtPath,
+    iconKey: state.useExternalWt ? 'windows-terminal' : 'terminal',
   });
 }
 
@@ -1253,6 +1265,7 @@ function createToolTab(toolKey) {
     command: tool.command,
     launchArgs: tool.launchArgs,
     worktreePath: wtPath,
+    iconKey: tool.iconKey,
   });
 }
 
@@ -1265,7 +1278,12 @@ function showTabDropdown() {
     className: 'tab-dropdown',
     anchorRect: dom.tabNewBtn.getBoundingClientRect(),
     html: `
-      ${menuItemHTML({ action: 'new-terminal', icon: icons.terminal, label: 'Terminal' })}
+      ${menuItemHTML({
+        action: 'new-terminal',
+        icon: state.useExternalWt ? icons['windows-terminal'] : icons.terminal,
+        label: state.useExternalWt ? 'Windows Terminal' : 'Terminal',
+        iconClass: state.useExternalWt ? 'windows-terminal-icon' : 'terminal-icon',
+      })}
       ${renderToolDropdownItems()}
     `,
     outsideClickHandler: handleDropdownOutsideClick,

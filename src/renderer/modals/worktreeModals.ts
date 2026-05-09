@@ -211,19 +211,12 @@ async function openForceRemoveWorktreeModal({ project, wt, dom, api, showToast, 
     </div>
     ${canDeleteBranch ? `
       <div class="form-group">
-        <label class="form-label">Branch deletion</label>
         <label class="form-hint">
           <input type="checkbox" id="delete-branch-toggle" />
-          <span>Delete branch <code>${esc(wt.branch)}</code> after removing this worktree. Off by default.</span>
+          <span>Delete branch <code>${esc(wt.branch)}</code></span>
         </label>
-        <p class="form-hint">Leave it off to keep branch.</p>
       </div>
-    ` : `
-      <p class="form-hint">This runs <code>git worktree remove --force</code>. Branch deletion is unavailable for detached or bare worktrees.</p>
-    `}
-    <p class="form-hint">App closes its own terminals and prewarmed tool sessions for this worktree first.</p>
-    <p class="form-hint">If another program still has files open here, removal can still fail with permission denied.</p>
-    <p class="form-hint">Force remove can discard uncommitted changes in this worktree.</p>
+    ` : ``}
   `;
 
   const { 'modal-cancel': cancelBtn, 'modal-confirm': confirmBtn } = configureModalFooter([

@@ -1,9 +1,12 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { execSync, execFileSync, spawn, exec } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const pty = require('node-pty');
+const { getWorktrees: readWorktrees, getGitInfo: readGitInfo } = require('./git/gitInfo');
+const { registerWorkspaceIpc } = require('./ipc/workspaceIpc');
+const { installPtyShutdownLifecycle } = require('./process/ptyLifecycle');
 
 // ── State ──────────────────────────────────────────────
 let workspaceConfig = { projects: [], settings: { worktreeBasePath: '', subworktreeBranchParents: {} } };
@@ -15,7 +18,7 @@ const ptyProcesses = new Map(); // id -> pty process
 function normalizeSettings(settings) {
   const nextSettings = settings && typeof settings === 'object' ? settings : {};
   const nextBranchParents = nextSettings.subworktreeBranchParents && typeof nextSettings.subworktreeBranchParents === 'object'
-    ? nextSettings.subworktreeBranchParents
+    ? /** @type {Record<string, string>} */ (nextSettings.subworktreeBranchParents)
     : {};
   return {
     worktreeBasePath: typeof nextSettings.worktreeBasePath === 'string'
@@ -24,7 +27,7 @@ function normalizeSettings(settings) {
     subworktreeBranchParents: Object.fromEntries(
       Object.entries(nextBranchParents)
         .filter(([branch, parent]) => typeof branch === 'string' && branch.trim() && typeof parent === 'string' && parent.trim())
-        .map(([branch, parent]) => [branch.trim(), parent.trim()])
+        .map(([branch, parent]) => [branch.trim(), String(parent).trim()])
     ),
   };
 }
@@ -60,89 +63,11 @@ function saveConfig() {
 
 // ── Git Helpers ────────────────────────────────────────
 function getWorktrees(projectPath) {
-  try {
-    const output = execSync('git worktree list --porcelain', {
-      cwd: projectPath,
-      encoding: 'utf-8',
-      timeout: 10000,
-    });
-
-    const worktrees = [];
-    let current = {};
-
-    for (const line of output.split('\n')) {
-      if (line.startsWith('worktree ')) {
-        current = { path: line.replace('worktree ', '').trim() };
-      } else if (line.startsWith('HEAD ')) {
-        current.head = line.replace('HEAD ', '').trim();
-      } else if (line.startsWith('branch ')) {
-        current.branch = line.replace('branch refs/heads/', '').trim();
-      } else if (line === 'bare') {
-        current.bare = true;
-      } else if (line === 'detached') {
-        current.detached = true;
-      } else if (line === '') {
-        if (current.path) {
-          current.name = path.basename(current.path);
-          current.id = Buffer.from(current.path).toString('base64url');
-          worktrees.push(current);
-        }
-        current = {};
-      }
-    }
-
-    return worktrees;
-  } catch (e) {
-    console.error('Failed to get worktrees for', projectPath, ':', e.message);
-    return [];
-  }
+  return readWorktrees(projectPath, execSync, path, Buffer);
 }
 
 function getGitInfo(dirPath) {
-  try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-      cwd: dirPath,
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
-
-    const statusOutput = execSync('git status --porcelain', {
-      cwd: dirPath,
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
-
-    const modifiedCount = statusOutput ? statusOutput.split('\n').length : 0;
-
-    let lastCommit = '';
-    let lastCommitDate = '';
-    try {
-      lastCommit = execSync('git log -1 --format="%s"', {
-        cwd: dirPath,
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
-      lastCommitDate = execSync('git log -1 --format="%cr"', {
-        cwd: dirPath,
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
-    } catch (_) {}
-
-    let aheadBehind = '';
-    try {
-      aheadBehind = execSync('git rev-list --left-right --count HEAD...@{upstream}', {
-        cwd: dirPath,
-        encoding: 'utf-8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
-    } catch (_) {}
-
-    return { branch, modifiedCount, lastCommit, lastCommitDate, aheadBehind };
-  } catch (e) {
-    return { branch: 'unknown', modifiedCount: 0, lastCommit: '', lastCommitDate: '', aheadBehind: '' };
-  }
+  return readGitInfo(dirPath, execSync);
 }
 
 function shellQuoteWindowsArg(value) {
@@ -262,82 +187,16 @@ function createWindow() {
 app.whenReady().then(() => {
   loadConfig();
   createWindow();
-
-  // ── Window controls ──
-  ipcMain.on('window:minimize', () => mainWindow.minimize());
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    else mainWindow.maximize();
-  });
-  ipcMain.on('window:close', () => mainWindow.close());
-
-  // ── Workspace API ────────────────────────────────────
-
-  ipcMain.handle('get-workspaces', () => workspaceConfig.projects);
-  ipcMain.handle('settings:get', () => normalizeSettings(workspaceConfig.settings));
-  ipcMain.handle('settings:update', (_, nextSettings) => {
-    workspaceConfig.settings = normalizeSettings(nextSettings);
-    saveConfig();
-    return workspaceConfig.settings;
-  });
-
-  ipcMain.handle('add-project', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory'],
-      title: 'Select a Git Project Root',
-    });
-    if (result.canceled || !result.filePaths.length) return null;
-
-    const projectPath = result.filePaths[0];
-    if (workspaceConfig.projects.find((p) => p.path === projectPath)) {
-      return { error: 'Project already added' };
-    }
-
-    let worktrees = getWorktrees(projectPath);
-    if (!worktrees || worktrees.length === 0) {
-      worktrees = [{
-        path: projectPath,
-        name: path.basename(projectPath),
-        id: Buffer.from(projectPath).toString('base64url'),
-        branch: 'none'
-      }];
-    }
-    const project = {
-      path: projectPath,
-      name: path.basename(projectPath),
-      worktrees,
-      addedAt: Date.now(),
-    };
-
-    workspaceConfig.projects.push(project);
-    saveConfig();
-    return project;
-  });
-
-  ipcMain.handle('remove-project', (_, projectPath) => {
-    workspaceConfig.projects = workspaceConfig.projects.filter(
-      (p) => p.path !== projectPath
-    );
-    saveConfig();
-    return true;
-  });
-
-  ipcMain.handle('refresh-worktrees', (_, projectPath) => {
-    let worktrees = getWorktrees(projectPath);
-    if (!worktrees || worktrees.length === 0) {
-      worktrees = [{
-        path: projectPath,
-        name: path.basename(projectPath),
-        id: Buffer.from(projectPath).toString('base64url'),
-        branch: 'none'
-      }];
-    }
-    const project = workspaceConfig.projects.find((p) => p.path === projectPath);
-    if (project) {
-      project.worktrees = worktrees;
-      saveConfig();
-    }
-    return worktrees;
+  registerWorkspaceIpc({
+    ipcMain,
+    dialog,
+    mainWindow,
+    workspaceConfig,
+    normalizeSettings,
+    saveConfig,
+    getWorktrees,
+    path,
+    Buffer,
   });
 
   ipcMain.handle('get-git-info', (_, dirPath) => getGitInfo(dirPath));
@@ -474,7 +333,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('open-in-explorer', (_, dirPath) => {
-    shell.openPath(dirPath);
+    void shell.openPath(dirPath);
     return { success: true };
   });
 
@@ -665,30 +524,4 @@ app.whenReady().then(() => {
   });
 });
 
-function killAllPtyProcesses() {
-  for (const [id, proc] of ptyProcesses) {
-    try {
-      const pid = proc.pid;
-      proc.kill();
-      // On Windows, also kill the entire process tree to avoid orphans
-      if (process.platform === 'win32' && pid) {
-        try {
-          execSync(`taskkill /pid ${pid} /T /F`, {
-            stdio: 'ignore',
-            timeout: 5000,
-          });
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
-  ptyProcesses.clear();
-}
-
-app.on('before-quit', () => {
-  killAllPtyProcesses();
-});
-
-app.on('window-all-closed', () => {
-  killAllPtyProcesses();
-  app.quit();
-});
+installPtyShutdownLifecycle(app, ptyProcesses, execSync);

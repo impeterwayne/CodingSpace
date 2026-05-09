@@ -4,6 +4,14 @@
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 const { WebLinksAddon } = require('@xterm/addon-web-links');
+const { initializeRendererLifecycle } = require('./lifecycle');
+const { openCreateBranchModal } = require('./modals/createBranchModal');
+const { openSettingsModal } = require('./modals/settingsModal');
+const { openAddWorktreeModal, openAddSubWorktreeModal, openMergeWorktreeModal, openForceRemoveWorktreeModal } = require('./modals/worktreeModals');
+const { createModalHelpers } = require('./ui/modalHelpers');
+const { createModalPrimitives } = require('./ui/modalPrimitives');
+
+type ToolTab = { key: string; action: string; command: string; label: string; iconKey: string; prewarm: boolean; launchArgs: string[]; title: string; warningBadge?: string };
 
 // ── Windows Terminal color scheme ──────────────────────
 const WT_THEME = {
@@ -32,10 +40,26 @@ const WT_THEME = {
 };
 
 // ── State ──────────────────────────────────────────────
-const state = {
+const state: {
+  projects: any[];
+  settings: { worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> };
+  useExternalWt: boolean;
+  useTmux: boolean;
+  workspaceSidebarCollapsed: boolean;
+  tabSidebarCollapsed: boolean;
+  expandedProjects: Set<string>;
+  terminals: Map<string, any>;
+  activeTerminalId: string | null;
+  activeWorktreePath: string | null;
+  worktreeActiveTerminal: Map<string, string>;
+  terminalCounter: number;
+  prewarm: { opencode: any; gemini: any };
+  prewarmInProgress: { opencode: boolean; gemini: boolean };
+} = {
   projects: [],
   settings: {
     worktreeBasePath: '',
+    subworktreeBranchParents: {},
   },
   useExternalWt: false,
   useTmux: true,
@@ -230,7 +254,7 @@ const icons = {
   antigravity: iconSvg(iconRaw.antigravity, 12),
 };
 
-const TOOL_TABS = {
+const TOOL_TABS: Record<string, ToolTab> = {
   opencode: {
     key: 'opencode',
     action: 'new-opencode',
@@ -286,6 +310,7 @@ async function resolveToolLaunchOrThrow(command, launchArgs = []) {
   return resolved.shellCommand;
 }
 
+/** @param {ToolTab} tool */
 function buildToolTabLabel(tool, wtName, useTmux) {
   const tmuxLabel = useTmux ? 'tmux+' : '';
   return `${tmuxLabel}${tool.label}: ${wtName}`;
@@ -297,22 +322,164 @@ function buildToolSessionName(tool, wtName) {
   return `${safeName}_${safeToolName}_${Date.now()}`;
 }
 
+function menuItemHTML({ action, icon, label, title = '', badges = [], danger = false }) {
+  const className = `tab-dropdown-item${danger ? ' danger' : ''}`;
+  const badgeHtml = badges.filter(Boolean).join('');
+  return `
+    <button class="${className}" data-action="${action}"${title ? ` title="${esc(title)}"` : ''}>
+      <span class="tab-dropdown-icon ${danger ? 'danger-icon' : 'terminal-icon'}">${icon}</span>
+      <span>${label}</span>
+      ${badgeHtml}
+    </button>
+  `;
+}
+
+function menuDividerHTML() {
+  return '<div class="tab-dropdown-divider"></div>';
+}
+
 function renderToolDropdownItems(tmuxBadge) {
-  return Object.values(TOOL_TABS)
+  return (Object.values(TOOL_TABS) as ToolTab[])
     .map((tool) => {
       const warningBadge = tool.warningBadge
         ? `<span class="tab-dropdown-badge danger-badge">${tool.warningBadge}</span>`
         : '';
-      return `
-      <button class="tab-dropdown-item" data-action="${tool.action}" title="${esc(tool.title || tool.label)}">
-        <span class="tab-dropdown-icon ${tool.iconKey}-icon">${icons[tool.iconKey]}</span>
-        <span>${tool.label}</span>
-        ${warningBadge}
-        ${tmuxBadge}
-      </button>
-    `;
+      return menuItemHTML({
+        action: tool.action,
+        icon: icons[tool.iconKey],
+        label: tool.label,
+        title: tool.title || tool.label,
+        badges: [warningBadge, tmuxBadge],
+      });
     })
     .join('');
+}
+
+/**
+ * @param {{ id: string, className: string, anchorRect?: DOMRect | null, x?: number, y?: number, html: string, outsideClickHandler: (e: MouseEvent) => void }} options
+ */
+function showPositionedMenu(options) {
+  const { id, className, anchorRect = null, x = 0, y = 0, html, outsideClickHandler } = options;
+  const menu = document.createElement('div');
+  menu.className = className;
+  menu.id = id;
+  menu.innerHTML = html;
+
+  if (anchorRect) {
+    menu.style.left = `${anchorRect.right + 4}px`;
+    menu.style.top = `${anchorRect.top}px`;
+  } else {
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+  }
+
+  document.body.appendChild(menu);
+
+  if (!anchorRect) {
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(x, window.innerWidth - rect.width - 8);
+    const top = Math.min(y, window.innerHeight - rect.height - 8);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+  }
+
+  menu.offsetHeight;
+  menu.classList.add('visible');
+
+  setTimeout(() => {
+    document.addEventListener('click', outsideClickHandler);
+  }, 0);
+
+  return menu;
+}
+
+function bindMenuActions(menu, handlers, onFinally) {
+  menu.addEventListener('click', async (e) => {
+    const item = e.target.closest('.tab-dropdown-item');
+    if (!item) return;
+
+    const action = item.dataset.action;
+    if (!action) return;
+
+    if (onFinally) onFinally();
+    const handler = handlers[action];
+    if (handler) await handler();
+  });
+}
+
+function bindWorktreeQuickAction(buttonEl, openFn, toastMessage) {
+  buttonEl.addEventListener('click', () => {
+    const wtPath = getRequiredActiveWorktreePath();
+    if (!wtPath) return;
+    openFn(wtPath);
+    showToast(toastMessage, 'info');
+  });
+}
+
+function sidebarActionButtonHTML({ action, path, title, icon, danger = false }) {
+  return `<button class="sidebar-icon-btn${danger ? ' danger' : ''}" data-action="${action}" data-path="${esc(path)}" title="${title}">${icon}</button>`;
+}
+
+function sidebarEmptyStateHTML() {
+  return '<div style="padding:10px 16px 10px 44px;color:var(--text-muted);font-size:11px;">No worktrees</div>';
+}
+
+const {
+  configureModalFooter,
+  focusModalInputLater,
+  bindModalEnterSubmit,
+  withAsyncButtonState,
+} = createModalHelpers(dom);
+
+function getAvailableWorktreeBranches(project, branches) {
+  const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
+  return branches.filter((branch) => !existingWtBranches.includes(branch) && !branch.startsWith('origin/'));
+}
+
+function syncWorktreePathInput(pathInput, baseDir, projectName) {
+  return (branch) => {
+    pathInput.value = branch ? `${baseDir}\\${projectName}-${branchToPascalPath(branch)}` : '';
+  };
+}
+
+function isInvalidGitBranchName(branchName) {
+  return /[\s~^:?*\[\\]/.test(branchName);
+}
+
+async function refreshProjectWorkspaces(projectPath) {
+  await window.api.refreshWorktrees(projectPath);
+  await loadWorkspaces();
+}
+
+function createWorktreeSubmitHandler({ project, combo, pathInput, button, buttonLabel, sourceWorktreePath, onSuccess }) {
+  return async () => {
+    const { branch: selectedBranch, isNew } = combo.getSelected();
+    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
+    const wtPath = pathInput.value;
+    if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
+    if (isNew && isInvalidGitBranchName(selectedBranch)) {
+      showToast('Invalid branch name', 'error');
+      return;
+    }
+
+    const result = await withAsyncButtonState(button, 'Creating...', async () => window.api.addWorktree({
+      projectPath: project.path,
+      sourceWorktreePath,
+      branchName: selectedBranch,
+      wtPath,
+      createBranch: isNew,
+    }), buttonLabel);
+
+    if (result.success) {
+      if (onSuccess) await onSuccess(selectedBranch);
+      showToast(`Worktree created: ${selectedBranch}`, 'success');
+      hideModal();
+      await refreshProjectWorkspaces(project.path);
+      return;
+    }
+
+    showToast(`Failed: ${result.error}`, 'error');
+  };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -427,7 +594,8 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
  * process — giving it proper terminal allocation (fixes opencode/gemini not
  * spawning when typed into a shell).
  */
-async function createDirectToolTerminal(cwd, name, { command, launchArgs = [], worktreePath = '' } = {}) {
+async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string } = {}) {
+  const { command, launchArgs = [], worktreePath = '' } = options;
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd;
 
@@ -788,7 +956,8 @@ function insertTab(id, name) {
 
   // Switch on click
   tab.addEventListener('click', (e) => {
-    if (e.target.closest('.terminal-tab-close')) return;
+    const target = e.target;
+    if (target instanceof Element && target.closest('.terminal-tab-close')) return;
     switchToTerminal(id);
   });
 
@@ -1096,58 +1265,29 @@ function createToolTab(toolKey, { useTmux = false } = {}) {
 }
 
 function showTabDropdown() {
-  // Remove existing dropdown if any
   hideTabDropdown();
 
-  const tmuxOn = state.useTmux;
-  const tmuxBadge = tmuxOn
+  const tmuxBadge = state.useTmux
     ? `<span class="tab-dropdown-badge tmux-badge">tmux</span>`
     : '';
 
-  const dropdown = document.createElement('div');
-  dropdown.className = 'tab-dropdown';
-  dropdown.id = 'tab-dropdown';
-  dropdown.innerHTML = `
-    <button class="tab-dropdown-item" data-action="new-terminal">
-      <span class="tab-dropdown-icon terminal-icon">${icons.terminal}</span>
-      <span>Terminal</span>
-      ${tmuxBadge}
-    </button>
-    ${renderToolDropdownItems(tmuxBadge)}
-  `;
-
-  // Position relative to the + button (to the right of the vertical sidebar)
-  const btnRect = dom.tabNewBtn.getBoundingClientRect();
-  dropdown.style.left = `${btnRect.right + 4}px`;
-  dropdown.style.top = `${btnRect.top}px`;
-  document.body.appendChild(dropdown);
-
-  // Force reflow for animation
-  dropdown.offsetHeight;
-  dropdown.classList.add('visible');
-
-  // Handle clicks
-  dropdown.addEventListener('click', (e) => {
-    const item = e.target.closest('.tab-dropdown-item');
-    if (!item) return;
-    const action = item.dataset.action;
-    hideTabDropdown();
-
-    if (action === 'new-terminal') {
-      createNewTerminalTab();
-      return;
-    }
-
-    const tool = getToolTabByAction(action);
-    if (tool) {
-      createToolTab(tool.key, { useTmux: state.useTmux });
-    }
+  const dropdown = showPositionedMenu({
+    id: 'tab-dropdown',
+    className: 'tab-dropdown',
+    anchorRect: dom.tabNewBtn.getBoundingClientRect(),
+    html: `
+      ${menuItemHTML({ action: 'new-terminal', icon: icons.terminal, label: 'Terminal', badges: [tmuxBadge] })}
+      ${renderToolDropdownItems(tmuxBadge)}
+    `,
+    outsideClickHandler: handleDropdownOutsideClick,
   });
 
-  // Close on outside click
-  setTimeout(() => {
-    document.addEventListener('click', handleDropdownOutsideClick);
-  }, 0);
+  bindMenuActions(dropdown, {
+    'new-terminal': () => createNewTerminalTab(),
+    ...Object.fromEntries(
+      Object.values(TOOL_TABS).map((tool) => [tool.action, () => createToolTab(tool.key, { useTmux: state.useTmux })])
+    ),
+  }, hideTabDropdown);
 }
 
 function hideTabDropdown() {
@@ -1167,66 +1307,25 @@ function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
   const canAddSubWorktree = canCreateNestedWorktree(project, wt);
 
-  const menu = document.createElement('div');
-  menu.className = 'worktree-context-menu tab-dropdown';
-  menu.id = 'worktree-context-menu';
-  menu.innerHTML = `
-    ${canAddSubWorktree ? `
-    <button class="tab-dropdown-item" data-action="add-sub-worktree">
-      <span class="tab-dropdown-icon terminal-icon">${icons.plus}</span>
-      <span>Add nested worktree</span>
-    </button>
-    <div class="tab-dropdown-divider"></div>
-    ` : ''}
-    <button class="tab-dropdown-item" data-action="merge-to-local-branch">
-      <span class="tab-dropdown-icon terminal-icon">${icons.gitBranch}</span>
-      <span>Merge to local branch</span>
-    </button>
-    <div class="tab-dropdown-divider"></div>
-    <button class="tab-dropdown-item danger" data-action="force-remove-worktree">
-      <span class="tab-dropdown-icon danger-icon">${icons.trash}</span>
-      <span>Force remove worktree</span>
-    </button>
-  `;
-
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  document.body.appendChild(menu);
-
-  const rect = menu.getBoundingClientRect();
-  const left = Math.min(x, window.innerWidth - rect.width - 8);
-  const top = Math.min(y, window.innerHeight - rect.height - 8);
-  menu.style.left = `${Math.max(8, left)}px`;
-  menu.style.top = `${Math.max(8, top)}px`;
-
-  menu.offsetHeight;
-  menu.classList.add('visible');
-
-  menu.addEventListener('click', async (e) => {
-    const item = e.target.closest('.tab-dropdown-item');
-    if (!item) return;
-
-    const action = item.dataset.action;
-    hideWorktreeContextMenu();
-
-    if (action === 'add-sub-worktree') {
-      await showAddSubWorktreeModal(project, wt);
-      return;
-    }
-
-    if (action === 'merge-to-local-branch') {
-      await showMergeWorktreeModal(project, wt);
-      return;
-    }
-
-    if (action === 'force-remove-worktree') {
-      await showForceRemoveWorktreeModal(project, wt);
-    }
+  const menu = showPositionedMenu({
+    id: 'worktree-context-menu',
+    className: 'worktree-context-menu tab-dropdown',
+    x,
+    y,
+    html: `
+      ${canAddSubWorktree ? `${menuItemHTML({ action: 'add-sub-worktree', icon: icons.plus, label: 'Add nested worktree' })}${menuDividerHTML()}` : ''}
+      ${menuItemHTML({ action: 'merge-to-local-branch', icon: icons.gitBranch, label: 'Merge to local branch' })}
+      ${menuDividerHTML()}
+      ${menuItemHTML({ action: 'force-remove-worktree', icon: icons.trash, label: 'Force remove worktree', danger: true })}
+    `,
+    outsideClickHandler: handleWorktreeContextMenuOutsideClick,
   });
 
-  setTimeout(() => {
-    document.addEventListener('click', handleWorktreeContextMenuOutsideClick);
-  }, 0);
+  bindMenuActions(menu, {
+    'add-sub-worktree': () => showAddSubWorktreeModal(project, wt),
+    'merge-to-local-branch': () => showMergeWorktreeModal(project, wt),
+    'force-remove-worktree': () => showForceRemoveWorktreeModal(project, wt),
+  }, hideWorktreeContextMenu);
 }
 
 function hideWorktreeContextMenu() {
@@ -1254,33 +1353,10 @@ dom.tabNewBtn.addEventListener('click', (e) => {
 });
 
 // Tab bar external tool buttons
-dom.btnVsCode.addEventListener('click', () => {
-  const wtPath = getRequiredActiveWorktreePath();
-  if (!wtPath) return;
-  window.api.openInEditor(wtPath);
-  showToast('Opening VS Code...', 'info');
-});
-
-dom.btnExplorer.addEventListener('click', () => {
-  const wtPath = getRequiredActiveWorktreePath();
-  if (!wtPath) return;
-  window.api.openInExplorer(wtPath);
-  showToast('Opening Explorer...', 'info');
-});
-
-dom.btnAndroidStudio.addEventListener('click', () => {
-  const wtPath = getRequiredActiveWorktreePath();
-  if (!wtPath) return;
-  window.api.openInAndroidStudio(wtPath);
-  showToast('Opening Android Studio...', 'info');
-});
-
-dom.btnAntigravity.addEventListener('click', () => {
-  const wtPath = getRequiredActiveWorktreePath();
-  if (!wtPath) return;
-  window.api.openInAntigravity(wtPath);
-  showToast('Opening Antigravity...', 'info');
-});
+bindWorktreeQuickAction(dom.btnVsCode, (wtPath) => window.api.openInEditor(wtPath), 'Opening VS Code...');
+bindWorktreeQuickAction(dom.btnExplorer, (wtPath) => window.api.openInExplorer(wtPath), 'Opening Explorer...');
+bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndroidStudio(wtPath), 'Opening Android Studio...');
+bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
 
 // ═══════════════════════════════════════════════════════
 // SIDEBAR
@@ -1409,6 +1485,14 @@ function sidebarProjectHTML(project, index) {
   const expanded = state.expandedProjects.has(project.path);
   const wtItems = buildWorktreeTree(project)
     .map((node) => sidebarWtItemHTML(project, node)).join('');
+  const actionButtons = [
+    { action: 'create-branch', title: 'Create branch', icon: icons.gitBranch },
+    { action: 'add-wt', title: 'Add worktree', icon: icons.plus },
+    { action: 'fetch', title: 'Fetch', icon: icons.download },
+    { action: 'remove', title: 'Remove', icon: icons.trash, danger: true },
+  ]
+    .map((action) => sidebarActionButtonHTML({ ...action, path: project.path }))
+    .join('');
 
   return `
     <div class="sidebar-project" data-project="${esc(project.path)}" style="animation-delay:${index * 0.04}s">
@@ -1419,15 +1503,12 @@ function sidebarProjectHTML(project, index) {
           <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
         </div>
         <div class="sidebar-project-actions">
-          <button class="sidebar-icon-btn" data-action="create-branch" data-path="${esc(project.path)}" title="Create branch">${icons.gitBranch}</button>
-          <button class="sidebar-icon-btn" data-action="add-wt" data-path="${esc(project.path)}" title="Add worktree">${icons.plus}</button>
-          <button class="sidebar-icon-btn" data-action="fetch" data-path="${esc(project.path)}" title="Fetch">${icons.download}</button>
-          <button class="sidebar-icon-btn danger" data-action="remove" data-path="${esc(project.path)}" title="Remove">${icons.trash}</button>
+          ${actionButtons}
         </div>
       </div>
       <div class="sidebar-wt-list ${expanded ? '' : 'collapsed'}" data-wt-list="${esc(project.path)}"
            style="${expanded ? '' : 'max-height:0'}">
-        ${wtItems || '<div style="padding:10px 16px 10px 44px;color:var(--text-muted);font-size:11px;">No worktrees</div>'}
+        ${wtItems || sidebarEmptyStateHTML()}
       </div>
     </div>
   `;
@@ -1456,6 +1537,7 @@ function sidebarWtItemHTML(project, node, depth = 0) {
 
 function updateSidebarActiveState() {
   document.querySelectorAll('.sidebar-wt-item').forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
     el.classList.toggle('active', el.dataset.wtPath === state.activeWorktreePath);
   });
 }
@@ -1466,23 +1548,28 @@ function attachSidebarProjectEvents(project) {
 
   // Toggle
   const header = el.querySelector('[data-action="toggle-project"]');
-  header?.addEventListener('click', (e) => {
-    if (e.target.closest('.sidebar-project-actions')) return;
-    const p = header.dataset.path;
-    const chevron = header.querySelector('.sidebar-project-chevron');
-    const wtList = el.querySelector(`[data-wt-list="${CSS.escape(p)}"]`);
-    if (state.expandedProjects.has(p)) {
-      state.expandedProjects.delete(p);
-      chevron.classList.remove('expanded');
-      wtList.classList.add('collapsed');
-      wtList.style.maxHeight = '0';
-    } else {
-      state.expandedProjects.add(p);
-      chevron.classList.add('expanded');
-      wtList.classList.remove('collapsed');
-      wtList.style.maxHeight = wtList.scrollHeight + 'px';
-    }
-  });
+  if (header instanceof HTMLElement) {
+    header.addEventListener('click', (e) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest('.sidebar-project-actions')) return;
+      const p = header.dataset.path;
+      const chevron = header.querySelector('.sidebar-project-chevron');
+      const wtList = el.querySelector(`[data-wt-list="${CSS.escape(p)}"]`);
+      if (chevron instanceof HTMLElement && wtList instanceof HTMLElement) {
+        if (state.expandedProjects.has(p)) {
+          state.expandedProjects.delete(p);
+          chevron.classList.remove('expanded');
+          wtList.classList.add('collapsed');
+          wtList.style.maxHeight = '0';
+        } else {
+          state.expandedProjects.add(p);
+          chevron.classList.add('expanded');
+          wtList.classList.remove('collapsed');
+          wtList.style.maxHeight = `${wtList.scrollHeight}px`;
+        }
+      }
+    });
+  }
 
   el.querySelector('[data-action="create-branch"]')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1511,6 +1598,7 @@ function attachSidebarProjectEvents(project) {
 
   // Worktree items → open terminal or switch to worktree context
   el.querySelectorAll('.sidebar-wt-item').forEach((wtEl) => {
+    if (!(wtEl instanceof HTMLElement)) return;
     wtEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1520,7 +1608,8 @@ function attachSidebarProjectEvents(project) {
     });
 
     wtEl.addEventListener('click', async (e) => {
-      if (e.target.closest('.sidebar-wt-actions')) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest('.sidebar-wt-actions')) return;
       const wtPath = wtEl.dataset.wtPath;
       const wtName = wtEl.dataset.wtName;
 
@@ -1555,25 +1644,29 @@ function attachSidebarProjectEvents(project) {
 
     wtEl.querySelector('[data-action="vscode"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.api.openInEditor(e.currentTarget.dataset.path);
+      const currentTarget = e.currentTarget;
+      if (currentTarget instanceof HTMLElement) window.api.openInEditor(currentTarget.dataset.path || '');
       showToast('Opening VS Code...', 'info');
     });
 
     wtEl.querySelector('[data-action="android-studio"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.api.openInAndroidStudio(e.currentTarget.dataset.path);
+      const currentTarget = e.currentTarget;
+      if (currentTarget instanceof HTMLElement) window.api.openInAndroidStudio(currentTarget.dataset.path || '');
       showToast('Opening Android Studio...', 'info');
     });
 
     wtEl.querySelector('[data-action="antigravity"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.api.openInAntigravity(e.currentTarget.dataset.path);
+      const currentTarget = e.currentTarget;
+      if (currentTarget instanceof HTMLElement) window.api.openInAntigravity(currentTarget.dataset.path || '');
       showToast('Opening Antigravity...', 'info');
     });
 
     wtEl.querySelector('[data-action="explorer"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.api.openInExplorer(e.currentTarget.dataset.path);
+      const currentTarget = e.currentTarget;
+      if (currentTarget instanceof HTMLElement) window.api.openInExplorer(currentTarget.dataset.path || '');
     });
   });
 }
@@ -1744,432 +1837,119 @@ function branchComboHTML() {
 
 // ── Create Branch Modal ────────────────────────────────
 async function showCreateBranchModal(project) {
-  dom.modalTitle.textContent = 'Create Branch';
-
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">New Branch Name</label>
-      <input class="form-input" id="new-branch-name" placeholder="e.g. feature/my-feature" autocomplete="off" spellcheck="false" />
-    </div>
-    <p class="form-hint">Creates a new branch from the current HEAD. You can create a worktree for it later.</p>
-  `;
-
-  const nameInput = dom.modalBody.querySelector('#new-branch-name');
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary" id="modal-confirm">${icons.gitBranch} Create Branch</button>
-  `;
-  showModal();
-  setTimeout(() => nameInput.focus(), 100);
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const branchName = nameInput.value.trim();
-    if (!branchName) { showToast('Please enter a branch name', 'error'); return; }
-    if (/[\s~^:?*\[\\]/.test(branchName)) {
-      showToast('Invalid branch name', 'error');
-      return;
-    }
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Creating...';
-    const result = await window.api.createBranch({ projectPath: project.path, branchName });
-    if (result.success) {
-      showToast(`Branch created: ${branchName}`, 'success');
-      hideModal();
-    } else {
-      showToast(`Failed: ${result.error}`, 'error');
-      btn.disabled = false;
-      btn.innerHTML = `${icons.gitBranch} Create Branch`;
-    }
-  });
-
-  nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      dom.modalFooter.querySelector('#modal-confirm').click();
-    }
+  return openCreateBranchModal({
+    project,
+    dom,
+    icons,
+    configureModalFooter,
+    showModal,
+    focusModalInputLater,
+    hideModal,
+    showToast,
+    isInvalidGitBranchName,
+    withAsyncButtonState,
+    bindModalEnterSubmit,
+    api: window.api,
   });
 }
 
 async function showSettingsModal() {
-  dom.modalTitle.textContent = 'Settings';
-
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">Sub Worktree Base Path</label>
-      <input class="form-input" id="settings-worktree-base-path" placeholder="Leave empty to use projectname.subworktree" autocomplete="off" spellcheck="false" />
-      <p class="form-hint">Set where sub worktrees are stored. Leave it empty to use the default <code>projectname.subworktree</code> location.</p>
-    </div>
-  `;
-
-  const basePathInput = dom.modalBody.querySelector('#settings-worktree-base-path');
-  basePathInput.value = state.settings?.worktreeBasePath || '';
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary" id="modal-confirm">${icons.settings} Save Settings</button>
-  `;
-  showModal();
-  setTimeout(() => basePathInput.focus(), 100);
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Saving...';
-
-    const settings = await window.api.updateSettings({
-      worktreeBasePath: basePathInput.value,
-    });
-
-    state.settings = settings || { worktreeBasePath: '' };
-    showToast('Settings saved', 'success');
-    hideModal();
-  });
-
-  basePathInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      dom.modalFooter.querySelector('#modal-confirm').click();
-    }
+  return openSettingsModal({
+    dom,
+    state,
+    icons,
+    configureModalFooter,
+    showModal,
+    focusModalInputLater,
+    hideModal,
+    withAsyncButtonState,
+    showToast,
+    bindModalEnterSubmit,
+    api: window.api,
   });
 }
 
 // ── Add Worktree Modal ─────────────────────────────────
 async function showAddWorktreeModal(project) {
-  dom.modalTitle.textContent = 'Add Worktree';
-  const branches = await window.api.getBranches(project.path);
-  const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
-  const availableBranches = branches.filter((b) => !existingWtBranches.includes(b) && !b.startsWith('origin/'));
-
-  const officialWorktreesDir = getOfficialWorktreeBasePath(project);
-
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">Branch</label>
-      ${branchComboHTML()}
-    </div>
-    <div class="form-group">
-      <label class="form-label">Worktree Path</label>
-      <input class="form-input" id="wt-path-input" />
-    </div>
-    <p class="form-hint">This creates an official worktree under <code>projectname.worktrees</code>. To add a subworktree, right-click an official worktree and choose <strong>Add sub worktree</strong>.</p>
-  `;
-
-  const pathInput = dom.modalBody.querySelector('#wt-path-input');
-  const comboContainer = dom.modalBody.querySelector('.branch-combo');
-
-  function updateWorktreePath(branch) {
-    if (!branch) {
-      pathInput.value = '';
-      return;
-    }
-
-    pathInput.value = `${officialWorktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
-  }
-
-  const combo = setupBranchCombo({
-    containerEl: comboContainer,
-    branches: availableBranches,
-    placeholder: 'Search or create a branch...',
-    showCreateOption: true,
-    onSelect: (branch) => {
-      updateWorktreePath(branch);
-    },
-  });
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary" id="modal-confirm">Create Worktree</button>
-  `;
-  showModal();
-  setTimeout(() => combo.focus(), 100);
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const { branch: selectedBranch, isNew } = combo.getSelected();
-    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
-    const wtPath = pathInput.value;
-    if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
-    if (isNew && /[\s~^:?*\[\\]/.test(selectedBranch)) {
-      showToast('Invalid branch name', 'error');
-      return;
-    }
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Creating...';
-    const result = await window.api.addWorktree({
-      projectPath: project.path,
-      sourceWorktreePath: project.path,
-      branchName: selectedBranch,
-      wtPath,
-      createBranch: isNew,
-    });
-    if (result.success) {
-      showToast(`Worktree created: ${selectedBranch}`, 'success');
-      hideModal();
-      await window.api.refreshWorktrees(project.path);
-      await loadWorkspaces();
-    } else {
-      showToast(`Failed: ${result.error}`, 'error');
-      btn.disabled = false;
-      btn.innerHTML = 'Create Worktree';
-    }
+  return openAddWorktreeModal({
+    project,
+    dom,
+    api: window.api,
+    getAvailableWorktreeBranches,
+    getOfficialWorktreeBasePath,
+    branchComboHTML,
+    setupBranchCombo,
+    syncWorktreePathInput,
+    configureModalFooter,
+    showModal,
+    focusModalInputLater,
+    hideModal,
+    createWorktreeSubmitHandler,
   });
 }
 
 async function showAddSubWorktreeModal(project, sourceWorktree) {
-  if (!canCreateNestedWorktree(project, sourceWorktree)) {
-    showToast('Nested worktrees cannot be created from the local worktree', 'error');
-    return;
-  }
-
-  dom.modalTitle.textContent = 'Add Nested Worktree';
-  const branches = await window.api.getBranches(project.path);
-  const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
-  const availableBranches = branches.filter((b) => !existingWtBranches.includes(b) && !b.startsWith('origin/'));
-  const subWorktreesDir = getWorktreeBasePath(project);
-
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">Source Worktree</label>
-      <input class="form-input" value="${esc(sourceWorktree.name)}" disabled />
-    </div>
-    <div class="form-group">
-      <label class="form-label">Branch</label>
-      ${branchComboHTML()}
-    </div>
-    <div class="form-group">
-      <label class="form-label">Worktree Path</label>
-      <input class="form-input" id="sub-wt-path-input" />
-    </div>
-    <p class="form-hint">This creates a normal worktree from <strong>${esc(sourceWorktree.name)}</strong> and stores it under <code>projectname.subworktree</code> unless you changed the setting.</p>
-  `;
-
-  const pathInput = dom.modalBody.querySelector('#sub-wt-path-input');
-  const comboContainer = dom.modalBody.querySelector('.branch-combo');
-
-  function updateSubWorktreePath(branch) {
-    if (!branch) {
-      pathInput.value = '';
-      return;
-    }
-
-    pathInput.value = `${subWorktreesDir}\\${project.name}-${branchToPascalPath(branch)}`;
-  }
-
-  const combo = setupBranchCombo({
-    containerEl: comboContainer,
-    branches: availableBranches,
-    placeholder: 'Search or create a branch...',
-    showCreateOption: true,
-    onSelect: (branch) => {
-      updateSubWorktreePath(branch);
-    },
-  });
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary" id="modal-confirm">Create Nested Worktree</button>
-  `;
-  showModal();
-  setTimeout(() => combo.focus(), 100);
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const { branch: selectedBranch, isNew } = combo.getSelected();
-    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
-    const wtPath = pathInput.value;
-    if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
-    if (isNew && /[\s~^:?*\[\\]/.test(selectedBranch)) {
-      showToast('Invalid branch name', 'error');
-      return;
-    }
-
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Creating...';
-
-    const result = await window.api.addWorktree({
-      projectPath: project.path,
-      sourceWorktreePath: project.path,
-      branchName: selectedBranch,
-      wtPath,
-      createBranch: isNew,
-    });
-
-    if (result.success) {
-      const nextBranchParents = {
-        ...(state.settings?.subworktreeBranchParents || {}),
-        [selectedBranch]: sourceWorktree.branch,
-      };
-      state.settings = await window.api.updateSettings({
-        ...state.settings,
-        subworktreeBranchParents: nextBranchParents,
-      });
-      showToast(`Worktree created: ${selectedBranch}`, 'success');
-      hideModal();
-      await window.api.refreshWorktrees(project.path);
-      await loadWorkspaces();
-    } else {
-      showToast(`Failed: ${result.error}`, 'error');
-      btn.disabled = false;
-      btn.innerHTML = 'Create Nested Worktree';
-    }
+  return openAddSubWorktreeModal({
+    project,
+    sourceWorktree,
+    dom,
+    state,
+    api: window.api,
+    canCreateNestedWorktree,
+    showToast,
+    getAvailableWorktreeBranches,
+    getWorktreeBasePath,
+    esc,
+    branchComboHTML,
+    setupBranchCombo,
+    syncWorktreePathInput,
+    configureModalFooter,
+    showModal,
+    focusModalInputLater,
+    hideModal,
+    createWorktreeSubmitHandler,
   });
 }
 
 async function showMergeWorktreeModal(project, wt) {
-  if (!wt?.branch) {
-    showToast('This worktree does not have a branch to merge', 'error');
-    return;
-  }
-  if (wt.detached) {
-    showToast('Cannot merge from a detached HEAD worktree', 'error');
-    return;
-  }
-  if (wt.bare) {
-    showToast('Cannot merge from a bare worktree', 'error');
-    return;
-  }
-
-  const branches = await window.api.getBranches(project.path);
-  const availableBranches = branches.filter((branch) => !branch.startsWith('origin/') && branch !== wt.branch);
-
-  if (!availableBranches.length) {
-    showToast('No local target branches available for merge', 'info');
-    return;
-  }
-
-  dom.modalTitle.textContent = 'Merge to Local Branch';
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">Source Branch</label>
-      <input class="form-input" value="${esc(wt.branch)}" disabled />
-    </div>
-    <div class="form-group">
-      <label class="form-label">Target Branch</label>
-      ${branchComboHTML()}
-    </div>
-    <p class="form-hint">This checks out the selected local branch in the project root worktree and merges <strong>${esc(wt.branch)}</strong> into it.</p>
-  `;
-
-  const comboContainer = dom.modalBody.querySelector('.branch-combo');
-  const combo = setupBranchCombo({
-    containerEl: comboContainer,
-    branches: availableBranches,
-    placeholder: 'Search local branches...',
-    showCreateOption: false,
-  });
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary" id="modal-confirm">${icons.gitBranch} Merge Branch</button>
-  `;
-  showModal();
-  setTimeout(() => combo.focus(), 100);
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const { branch: targetBranch } = combo.getSelected();
-    if (!targetBranch) {
-      showToast('Please select a local target branch', 'error');
-      return;
-    }
-
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Merging...';
-
-    const result = await window.api.mergeWorktreeToBranch({
-      projectPath: project.path,
-      sourceBranch: wt.branch,
-      targetBranch,
-    });
-
-    if (result.success) {
-      showToast(`Merged ${wt.branch} into ${targetBranch}`, 'success');
-      hideModal();
-      await window.api.refreshWorktrees(project.path);
-      await loadWorkspaces();
-    } else {
-      showToast(`Merge failed: ${result.error}`, 'error');
-      btn.disabled = false;
-      btn.innerHTML = `${icons.gitBranch} Merge Branch`;
-    }
+  return openMergeWorktreeModal({
+    project,
+    wt,
+    dom,
+    api: window.api,
+    showToast,
+    esc,
+    branchComboHTML,
+    setupBranchCombo,
+    configureModalFooter,
+    showModal,
+    focusModalInputLater,
+    hideModal,
+    withAsyncButtonState,
+    refreshProjectWorkspaces,
+    icons,
   });
 }
 
 async function showForceRemoveWorktreeModal(project, wt) {
-  if (wt.path === project.path) {
-    showToast('Cannot force remove the primary project worktree', 'error');
-    return;
-  }
-
-  dom.modalTitle.textContent = 'Force Remove Worktree';
-  dom.modalBody.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">Worktree</label>
-      <input class="form-input" value="${esc(wt.name)}" disabled />
-    </div>
-    <div class="form-group">
-      <label class="form-label">Path</label>
-      <input class="form-input" value="${esc(wt.path)}" disabled />
-    </div>
-    <p class="form-hint">This runs <code>git worktree remove --force</code> and may discard uncommitted changes in that worktree.</p>
-  `;
-
-  dom.modalFooter.innerHTML = `
-    <button class="btn-secondary" id="modal-cancel">Cancel</button>
-    <button class="btn-primary danger-btn" id="modal-confirm">${icons.trash} Force Remove</button>
-  `;
-  showModal();
-
-  dom.modalFooter.querySelector('#modal-cancel').addEventListener('click', hideModal);
-  dom.modalFooter.querySelector('#modal-confirm').addEventListener('click', async () => {
-    const btn = dom.modalFooter.querySelector('#modal-confirm');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Removing...';
-
-    const result = await window.api.forceRemoveWorktree({
-      projectPath: project.path,
-      wtPath: wt.path,
-    });
-
-    if (result.success) {
-      showToast(`Force removed: ${wt.name}`, 'success');
-      hideModal();
-      await window.api.refreshWorktrees(project.path);
-      await loadWorkspaces();
-    } else {
-      showToast(`Failed: ${result.error}`, 'error');
-      btn.disabled = false;
-      btn.innerHTML = `${icons.trash} Force Remove`;
-    }
+  return openForceRemoveWorktreeModal({
+    project,
+    wt,
+    dom,
+    api: window.api,
+    showToast,
+    esc,
+    configureModalFooter,
+    showModal,
+    hideModal,
+    withAsyncButtonState,
+    refreshProjectWorkspaces,
+    icons,
   });
 }
 
-// ── Modal ──────────────────────────────────────────────
-function showModal() { dom.modalOverlay.style.display = ''; }
-function hideModal() { dom.modalOverlay.style.display = 'none'; }
-dom.modalCloseBtn.addEventListener('click', hideModal);
-dom.modalOverlay.addEventListener('click', (e) => {
-  if (e.target === dom.modalOverlay) hideModal();
-});
-
-// ── Toast ──────────────────────────────────────────────
-function showToast(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  dom.toastContainer.appendChild(toast);
-  setTimeout(() => {
-    toast.style.animation = 'toastOut 0.2s ease-out forwards';
-    setTimeout(() => toast.remove(), 200);
-  }, 3500);
-}
+const { showModal, hideModal, showToast, initializeModalPrimitives } = createModalPrimitives(dom);
+initializeModalPrimitives();
 
 // ── Utilities ──────────────────────────────────────────
 function esc(str) {
@@ -2180,26 +1960,14 @@ function esc(str) {
 }
 
 // ── Initialize ─────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  setWorkspaceSidebarCollapsed(loadWorkspaceSidebarCollapsed(), { persist: false });
-  setTabSidebarCollapsed(loadTabSidebarCollapsed(), { persist: false });
-  loadWorkspaces();
-});
-
-// ── Cleanup on exit ────────────────────────────────────
-window.addEventListener('beforeunload', () => {
-  // Kill all prewarmed background sessions
-  for (const toolKey of Object.keys(PREWARM_TOOLS)) {
-    cleanupPrewarm(toolKey);
-  }
-
-  // Kill all active terminal PTY processes
-  for (const [id, termInfo] of state.terminals) {
-    try {
-      termInfo.cleanup();
-      termInfo.term.dispose();
-      window.api.ptyKill(id);
-    } catch (_) {}
-  }
-  state.terminals.clear();
+initializeRendererLifecycle({
+  loadWorkspaceSidebarCollapsed,
+  setWorkspaceSidebarCollapsed,
+  loadTabSidebarCollapsed,
+  setTabSidebarCollapsed,
+  loadWorkspaces,
+  PREWARM_TOOLS,
+  cleanupPrewarm,
+  state,
+  ptyKill: window.api.ptyKill,
 });

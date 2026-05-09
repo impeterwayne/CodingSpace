@@ -257,15 +257,11 @@ app.whenReady().then(() => {
 
   // ── Launch Actions (kept for external terminal) ──────
 
-  ipcMain.handle('open-wt', (_, { cwd, useTmux, sessionName }) => {
+  ipcMain.handle('open-wt', (_, { cwd, launchCommand, launchArgs = [] }) => {
     try {
-      let args;
-      if (useTmux) {
-        const safeName = (sessionName || 'main').replace(/[^a-zA-Z0-9_-]/g, '_');
-        args = ['-d', cwd, '--', 'tmux', 'new-session', '-A', '-s', safeName];
-      } else {
-        args = ['-d', cwd];
-      }
+      const args = launchCommand
+        ? ['new-tab', '-d', cwd, 'cmd.exe', '/d', '/k', resolveToolLaunch(launchCommand, launchArgs).shellCommand]
+        : ['new-tab', '-d', cwd];
       spawn('wt.exe', args, { detached: true, stdio: 'ignore', shell: true });
       return { success: true };
     } catch (e) {

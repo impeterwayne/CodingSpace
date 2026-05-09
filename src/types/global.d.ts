@@ -1,3 +1,10 @@
+type OpenWindowsTerminalOptions = {
+  cwd: string;
+  sessionName?: string;
+  launchCommand?: string;
+  launchArgs?: string[];
+};
+
 declare global {
   interface Window {
     api: {
@@ -10,7 +17,7 @@ declare global {
       refreshWorktrees: (path: string) => Promise<any>;
       getGitInfo: (path: string) => Promise<any>;
       getRecentCommits: (path: string) => Promise<any>;
-      openWindowsTerminal: (opts: any) => Promise<any>;
+      openWindowsTerminal: (opts: OpenWindowsTerminalOptions) => Promise<any>;
       openInEditor: (path: string) => Promise<any>;
       openInExplorer: (path: string) => Promise<any>;
       openInAndroidStudio: (path: string) => Promise<any>;

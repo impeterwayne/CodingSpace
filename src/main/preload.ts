@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+type OpenWindowsTerminalOptions = {
+  cwd: string;
+  sessionName?: string;
+  launchCommand?: string;
+  launchArgs?: string[];
+};
+
 contextBridge.exposeInMainWorld('api', {
   // ── Window controls ──
   minimize: () => ipcRenderer.send('window:minimize'),
@@ -17,7 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   getRecentCommits: (path) => ipcRenderer.invoke('get-recent-commits', path),
 
   // ── Launch actions ──
-  openWindowsTerminal: (opts) => ipcRenderer.invoke('open-wt', opts),
+  openWindowsTerminal: (opts: OpenWindowsTerminalOptions) => ipcRenderer.invoke('open-wt', opts),
   openInEditor: (path) => ipcRenderer.invoke('open-in-editor', path),
   openInExplorer: (path) => ipcRenderer.invoke('open-in-explorer', path),
   openInAndroidStudio: (path) => ipcRenderer.invoke('open-in-android-studio', path),

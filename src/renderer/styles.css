@@ -1035,7 +1035,6 @@ body {
 .tab-dropdown-item:hover .tab-dropdown-icon.gemini-icon { color: #d0c6ff; }
 .tab-dropdown-item:hover .tab-dropdown-icon.android-icon { color: #69f0ae; }
 .tab-dropdown-item:hover .tab-dropdown-icon.antigravity-icon { color: #ffcc02; }
-.tab-dropdown-item:hover .tab-dropdown-icon.tmux-icon { color: #69f0ae; }
 .tab-dropdown-item:hover .tab-dropdown-icon.danger-icon { color: #ff8a8a; }
 
 .tab-dropdown-badge {
@@ -1047,10 +1046,6 @@ body {
   border-radius: 3px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-}
-.tab-dropdown-badge.tmux-badge {
-  background: rgba(61, 220, 132, 0.12);
-  color: #3ddc84;
 }
 .tab-dropdown-badge.danger-badge {
   background: rgba(255, 107, 107, 0.14);
@@ -1079,11 +1074,11 @@ body {
 .terminal-pane.active {
   display: block;
 }
-/* Prewarmed terminal panes: full-size for proper xterm fit, but invisible */\r
-.terminal-pane.prewarm-hidden {\r
-  display: block;\r
-  visibility: hidden;\r
-  pointer-events: none;\r
+/* Prewarmed terminal panes: full-size for proper xterm fit, but invisible */
+.terminal-pane.prewarm-hidden {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* ── xterm.js Windows Terminal theme overrides ── */

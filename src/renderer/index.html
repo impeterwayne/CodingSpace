@@ -21,13 +21,13 @@
       <span class="app-title">Coding Space</span>
     </div>
     <div class="titlebar-right">
-      <button class="titlebar-btn" id="btn-minimize" aria-label="Minimize">
+      <button type="button" class="titlebar-btn" id="btn-minimize" aria-label="Minimize">
         <img src="icons/minimize.svg" width="12" height="12" alt="" />
       </button>
-      <button class="titlebar-btn" id="btn-maximize" aria-label="Maximize">
+      <button type="button" class="titlebar-btn" id="btn-maximize" aria-label="Maximize">
         <img src="icons/maximize.svg" width="12" height="12" alt="" />
       </button>
-      <button class="titlebar-btn btn-close" id="btn-close" aria-label="Close">
+      <button type="button" class="titlebar-btn btn-close" id="btn-close" aria-label="Close">
         <img src="icons/close.svg" width="12" height="12" alt="" />
       </button>
     </div>
@@ -41,13 +41,13 @@
       <div class="sidebar-header">
         <h2 class="sidebar-title">Projects</h2>
         <div class="sidebar-actions">
-          <button class="sidebar-icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
+          <button type="button" class="sidebar-icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
             <img src="icons/settings.svg" width="14" height="14" alt="" />
           </button>
-          <button class="sidebar-icon-btn" id="btn-refresh-all" title="Refresh all">
+          <button type="button" class="sidebar-icon-btn" id="btn-refresh-all" title="Refresh all">
             <img src="icons/refresh.svg" width="14" height="14" alt="" />
           </button>
-          <button class="sidebar-icon-btn accent" id="btn-add-project" title="Add project">
+          <button type="button" class="sidebar-icon-btn accent" id="btn-add-project" title="Add project">
             <img src="icons/plus.svg" width="14" height="14" alt="" />
           </button>
         </div>
@@ -66,7 +66,7 @@
             <img src="icons/folder-plus.svg" width="32" height="32" alt="" />
           </div>
           <p>No projects yet</p>
-          <button class="btn-primary btn-small" id="btn-add-first">
+          <button type="button" class="btn-primary btn-small" id="btn-add-first">
             <img src="icons/plus.svg" width="12" height="12" alt="" />
             Add Project
           </button>
@@ -79,11 +79,11 @@
       <!-- Vertical Tab Sidebar -->
       <div id="terminal-tabs" class="terminal-tabs">
         <div class="tab-sidebar-controls">
-          <button class="tab-new-btn" id="tab-new-btn" title="New terminal">
+          <button type="button" class="tab-new-btn" id="tab-new-btn" title="New terminal">
             <img src="icons/plus.svg" width="12" height="12" alt="" />
             <span class="tab-new-label">New Tab</span>
           </button>
-          <button class="tab-collapse-btn" id="tab-collapse-btn" title="Collapse tabs">
+          <button type="button" class="tab-collapse-btn" id="tab-collapse-btn" title="Collapse tabs">
             <img src="icons/chevron.svg" width="12" height="12" alt="" />
           </button>
         </div>
@@ -130,29 +130,24 @@
             <span class="workspace-toggle-slider"></span>
             <span class="workspace-toggle-label" data-label-expanded="External WT" data-label-collapsed="Ext">External WT</span>
           </label>
-          <label class="workspace-toggle" title="Use tmux for new terminals">
-            <input type="checkbox" id="toggle-tmux" checked />
-            <span class="workspace-toggle-slider"></span>
-            <span class="workspace-toggle-label" data-label-expanded="Use tmux" data-label-collapsed="tmux">Use tmux</span>
-          </label>
         </section>
 
         <section class="workspace-section">
           <h3 class="workspace-section-title">Open Active Worktree</h3>
           <div class="workspace-tool-list">
-            <button class="workspace-tool-btn brand-logo-btn" id="btn-antigravity" title="Open in Antigravity" aria-label="Open in Antigravity">
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-antigravity" title="Open in Antigravity" aria-label="Open in Antigravity">
               <span class="workspace-tool-icon"><img src="icons/antigravity.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Antigravity</span>
             </button>
-            <button class="workspace-tool-btn brand-logo-btn" id="btn-android-studio" title="Open in Android Studio" aria-label="Open in Android Studio">
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-android-studio" title="Open in Android Studio" aria-label="Open in Android Studio">
               <span class="workspace-tool-icon"><img src="icons/android.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Android Studio</span>
             </button>
-            <button class="workspace-tool-btn brand-logo-btn" id="btn-vscode" title="Open in VS Code" aria-label="Open in VS Code">
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-vscode" title="Open in VS Code" aria-label="Open in VS Code">
               <span class="workspace-tool-icon"><img src="icons/code.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">VS Code</span>
             </button>
-            <button class="workspace-tool-btn brand-logo-btn" id="btn-explorer" title="Open in Explorer" aria-label="Open in Explorer">
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-explorer" title="Open in Explorer" aria-label="Open in Explorer">
               <span class="workspace-tool-icon"><img src="icons/folder.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Explorer</span>
             </button>
@@ -167,7 +162,7 @@
     <div class="modal" id="modal">
       <div class="modal-header">
         <h3 id="modal-title">Title</h3>
-        <button class="btn-icon" id="modal-close-btn">
+        <button type="button" class="btn-icon" id="modal-close-btn">
           <img src="icons/close.svg" width="16" height="16" alt="" />
         </button>
       </div>
@@ -184,9 +179,9 @@
       xhr.open('GET', img.src, false);
       xhr.send();
       if (xhr.status === 200 || xhr.status === 0) {
-        var div = document.createElement('div');
+        const div = document.createElement('div');
         div.innerHTML = xhr.responseText.trim();
-        var svg = div.querySelector('svg');
+        const svg = div.querySelector('svg');
         if (svg) {
           svg.setAttribute('width', img.getAttribute('width') || '12');
           svg.setAttribute('height', img.getAttribute('height') || '12');

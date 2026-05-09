@@ -55,7 +55,6 @@ const state: {
   projects: any[];
   settings: { worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> };
   useExternalWt: boolean;
-  useTmux: boolean;
   workspaceSidebarCollapsed: boolean;
   tabSidebarCollapsed: boolean;
   expandedProjects: Set<string>;
@@ -73,7 +72,6 @@ const state: {
     subworktreeBranchParents: {},
   },
   useExternalWt: false,
-  useTmux: true,
   workspaceSidebarCollapsed: false,
   tabSidebarCollapsed: false,
   expandedProjects: new Set(),
@@ -104,7 +102,6 @@ const dom = {
   btnAddFirst: $('#btn-add-first'),
   btnRefreshAll: $('#btn-refresh-all'),
   toggleExternalWt: $('#toggle-external-wt'),
-  toggleTmux: $('#toggle-tmux'),
   projectsContainer: $('#projects-container'),
   loadingState: $('#loading-state'),
   emptyState: $('#empty-state'),
@@ -142,9 +139,6 @@ dom.btnClose.addEventListener('click', () => window.api.close());
 // ── Option Toggles ─────────────────────────────────────
 dom.toggleExternalWt.addEventListener('change', (e) => {
   state.useExternalWt = e.target.checked;
-});
-dom.toggleTmux.addEventListener('change', (e) => {
-  state.useTmux = e.target.checked;
 });
 
 dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
@@ -322,9 +316,8 @@ async function resolveToolLaunchOrThrow(command, launchArgs = []) {
 }
 
 /** @param {ToolTab} tool */
-function buildToolTabLabel(tool, wtName, useTmux) {
-  const tmuxLabel = useTmux ? 'tmux+' : '';
-  return `${tmuxLabel}${tool.label}: ${wtName}`;
+function buildToolTabLabel(tool, wtName) {
+  return `${tool.label}: ${wtName}`;
 }
 
 function buildToolSessionName(tool, wtName) {
@@ -349,7 +342,7 @@ function menuDividerHTML() {
   return '<div class="tab-dropdown-divider"></div>';
 }
 
-function renderToolDropdownItems(tmuxBadge) {
+function renderToolDropdownItems() {
   return (Object.values(TOOL_TABS) as ToolTab[])
     .map((tool) => {
       const warningBadge = tool.warningBadge
@@ -360,7 +353,7 @@ function renderToolDropdownItems(tmuxBadge) {
         icon: icons[tool.iconKey],
         label: tool.label,
         title: tool.title || tool.label,
-        badges: [warningBadge, tmuxBadge],
+        badges: [warningBadge],
       });
     })
     .join('');
@@ -488,7 +481,7 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
 
-async function createTerminal(cwd, name, { useTmux = false, sessionName = '', worktreePath = '' } = {}) {
+async function createTerminal(cwd, name, { worktreePath = '' } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
 
@@ -573,18 +566,10 @@ async function createTerminal(cwd, name, { useTmux = false, sessionName = '', wo
   // Switch to this terminal
   switchToTerminal(id);
 
-  // Fit and send initial size, then optionally start tmux
+  // Fit and send initial size
   setTimeout(() => {
     fitAddon.fit();
     window.api.ptyResize(id, term.cols, term.rows);
-
-    // If tmux is requested, launch a tmux session inside the PTY
-    if (useTmux) {
-      const safeName = (sessionName || name || 'main').replace(/[^a-zA-Z0-9_-]/g, '_');
-      setTimeout(() => {
-        window.api.ptyWrite(id, `tmux new-session -A -s ${safeName}\r`);
-      }, 300);
-    }
   }, 100);
 
   return id;
@@ -713,9 +698,6 @@ function attachPtyToTerminal(id, term, fitAddon, paneEl, cleanupExtra = () => {}
   };
 }
 
-function buildTmuxLaunchCommand(sessionName, launchCommand) {
-  return `tmux new-session -s ${sessionName} -- ${launchCommand}`;
-}
 
 // ═══════════════════════════════════════════════════════
 // PREWARM SYSTEM — Background tool sessions
@@ -740,7 +722,6 @@ async function createPrewarmedTerminal(toolKey) {
 
   const id = `term-${++state.terminalCounter}`;
 
-  const useTmux = state.useTmux;
   const result = await window.api.ptyCreate({ cwd: wtPath, id });
   if (!result.success) {
     console.warn(`[prewarm] Failed to create PTY for ${toolKey}:`, result.error);
@@ -770,23 +751,12 @@ async function createPrewarmedTerminal(toolKey) {
     setTimeout(() => createPrewarmedTerminal(toolKey), 1000);
   });
 
-  // Send initial resize + launch the tool command when needed
+  // Send initial resize + launch the tool command
   setTimeout(() => {
     window.api.ptyResize(id, 120, 30);
-
-    if (useTmux) {
-      const wtName = getWorktreeNameForPath(wtPath);
-      const safeName = (wtName || 'main').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const uniqueId = Date.now();
-      const sessionName = `${safeName}_${tool.command}_prewarm_${uniqueId}`;
-      setTimeout(() => {
-        window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, launchCommand)}\r`);
-      }, 300);
-    } else {
-      setTimeout(() => {
-        window.api.ptyWrite(id, `${launchCommand}\r`);
-      }, 500);
-    }
+    setTimeout(() => {
+      window.api.ptyWrite(id, `${launchCommand}\r`);
+    }, 500);
   }, 100);
 
   // Store as prewarmed backend session only
@@ -795,7 +765,6 @@ async function createPrewarmedTerminal(toolKey) {
     cleanup,
     cwd: wtPath,
     worktreePath: wtPath,
-    usedTmux: useTmux,
     launchCommand,
   };
   state.prewarmInProgress[toolKey] = false;
@@ -833,16 +802,15 @@ function promotePrewarmedTerminal(toolKey) {
   const tool = getToolTabByKey(toolKey);
   const { wtPath, wtName } = getActiveWorktreeInfo();
 
-  // Check if the prewarmed session matches the current worktree and tmux setting
-  if (pw.worktreePath !== wtPath || pw.usedTmux !== state.useTmux) {
+  // Check if the prewarmed session matches the current worktree
+  if (pw.worktreePath !== wtPath) {
     // Mismatch — discard and fall through to normal creation
     cleanupPrewarm(toolKey);
     return false;
   }
 
   const id = pw.id;
-  const tmuxLabel = pw.usedTmux ? 'tmux+' : '';
-  const tabLabel = `${tmuxLabel}${tool.label}: ${wtName}`;
+  const tabLabel = buildToolTabLabel(tool, wtName);
 
   const term = new Terminal({
     theme: WT_THEME,
@@ -1217,18 +1185,34 @@ function getActiveWorktreeInfo() {
 
 function createNewTerminalTab() {
   const { wtPath, wtName } = getActiveWorktreeInfo();
+  if (state.useExternalWt) {
+    window.api.openWindowsTerminal({
+      cwd: wtPath,
+    });
+    return;
+  }
+
   const count = getTerminalsForWorktree(wtPath).length + 1;
   createTerminal(wtPath, `${wtName} (${count})`, {
-    useTmux: state.useTmux,
-    sessionName: `${wtName.replace(/[^a-zA-Z0-9]/g, '_')}_${count}`,
     worktreePath: wtPath,
   });
 }
 
-function createToolTab(toolKey, { useTmux = false } = {}) {
+function createToolTab(toolKey) {
   const tool = getToolTabByKey(toolKey);
   if (!tool) {
     showToast(`Unknown tool: ${toolKey}`, 'error');
+    return;
+  }
+
+  const { wtPath, wtName } = getActiveWorktreeInfo();
+
+  if (state.useExternalWt) {
+    void window.api.openWindowsTerminal({
+      cwd: wtPath,
+      launchCommand: tool.command,
+      launchArgs: tool.launchArgs,
+    });
     return;
   }
 
@@ -1236,29 +1220,7 @@ function createToolTab(toolKey, { useTmux = false } = {}) {
     return;
   }
 
-  const { wtPath, wtName } = getActiveWorktreeInfo();
-  const tabLabel = buildToolTabLabel(tool, wtName, useTmux);
-
-  if (useTmux) {
-    const sessionName = buildToolSessionName(tool, wtName);
-    createTerminal(wtPath, tabLabel, {
-      useTmux: false,
-      sessionName,
-      worktreePath: wtPath,
-    }).then(async (id) => {
-      if (!id) return;
-      try {
-        const launchCommand = await resolveToolLaunchOrThrow(tool.command, tool.launchArgs);
-        setTimeout(() => {
-          window.api.ptyWrite(id, `${buildTmuxLaunchCommand(sessionName, launchCommand)}\r`);
-        }, 500);
-      } catch (error) {
-        showToast(`Failed to launch ${tool.command}: ${error.message}`, 'error');
-      }
-    });
-    return;
-  }
-
+  const tabLabel = buildToolTabLabel(tool, wtName);
   createDirectToolTerminal(wtPath, tabLabel, {
     command: tool.command,
     launchArgs: tool.launchArgs,
@@ -1266,20 +1228,17 @@ function createToolTab(toolKey, { useTmux = false } = {}) {
   });
 }
 
+
 function showTabDropdown() {
   hideTabDropdown();
-
-  const tmuxBadge = state.useTmux
-    ? `<span class="tab-dropdown-badge tmux-badge">tmux</span>`
-    : '';
 
   const dropdown = showPositionedMenu({
     id: 'tab-dropdown',
     className: 'tab-dropdown',
     anchorRect: dom.tabNewBtn.getBoundingClientRect(),
     html: `
-      ${menuItemHTML({ action: 'new-terminal', icon: icons.terminal, label: 'Terminal', badges: [tmuxBadge] })}
-      ${renderToolDropdownItems(tmuxBadge)}
+      ${menuItemHTML({ action: 'new-terminal', icon: icons.terminal, label: 'Terminal' })}
+      ${renderToolDropdownItems()}
     `,
     outsideClickHandler: handleDropdownOutsideClick,
   });
@@ -1287,7 +1246,7 @@ function showTabDropdown() {
   bindMenuActions(dropdown, {
     'new-terminal': () => createNewTerminalTab(),
     ...Object.fromEntries(
-      Object.values(TOOL_TABS).map((tool) => [tool.action, () => createToolTab(tool.key, { useTmux: state.useTmux })])
+      Object.values(TOOL_TABS).map((tool) => [tool.action, () => createToolTab(tool.key)])
     ),
   }, hideTabDropdown);
 }
@@ -1544,32 +1503,19 @@ function attachSidebarProjectEvents(project) {
       const wtPath = wtEl.dataset.wtPath;
       const wtName = wtEl.dataset.wtName;
 
-      if (state.useExternalWt) {
-        // Open external Windows Terminal (optionally with tmux)
-        const result = await window.api.openWindowsTerminal({
-          cwd: wtPath,
-          useTmux: state.useTmux,
-          sessionName: wtName.replace(/[^a-zA-Z0-9]/g, '_'),
-        });
-        const label = state.useTmux ? `WT+tmux: ${wtName}` : `WT: ${wtName}`;
-        showToast(result.success ? `Opened ${label}` : `Failed: ${result.error}`, result.success ? 'success' : 'error');
+      // Switch to this worktree's tab context
+      const wtTerminals = getTerminalsForWorktree(wtPath);
+      if (wtTerminals.length > 0) {
+        // Worktree already has terminals — switch context to show them
+        switchWorktreeContext(wtPath);
       } else {
-        // Switch to this worktree's tab context
-        const wtTerminals = getTerminalsForWorktree(wtPath);
-        if (wtTerminals.length > 0) {
-          // Worktree already has terminals — switch context to show them
-          switchWorktreeContext(wtPath);
-        } else {
-          // No terminals yet — create the first one for this worktree
-          await createTerminal(wtPath, wtName, {
-            useTmux: state.useTmux,
-            sessionName: wtName.replace(/[^a-zA-Z0-9]/g, '_'),
-            worktreePath: wtPath,
-          });
-          // Start prewarming tool sessions for this worktree immediately in the background.
-          // The visible default tab remains a normal terminal.
-          prewarmAllTools();
-        }
+        // No terminals yet — create the first one for this worktree
+        await createTerminal(wtPath, wtName, {
+          worktreePath: wtPath,
+        });
+        // Start prewarming tool sessions for this worktree immediately in the background.
+        // The visible default tab remains a normal terminal.
+        prewarmAllTools();
       }
     });
 

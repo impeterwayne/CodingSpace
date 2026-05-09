@@ -5,67 +5,22 @@ const fs = require('fs');
 const os = require('os');
 const pty = require('node-pty');
 const { getWorktrees: readWorktrees, getGitInfo: readGitInfo } = require('./git/gitInfo');
+const { createWorkspaceConfigStore } = require('../application/workspaceConfigStore');
+const { createWorkspaceService } = require('../application/workspaceService');
 const { registerWorkspaceIpc } = require('./ipc/workspaceIpc');
 const { installPtyShutdownLifecycle } = require('./process/ptyLifecycle');
 
 // ── State ──────────────────────────────────────────────
-let workspaceConfig = { projects: [], settings: { worktreeBasePath: '', subworktreeBranchParents: {} } };
 const configPath = path.join(app.getPath('userData'), 'workspaces.json');
+const workspaceConfigStore = createWorkspaceConfigStore({ configPath });
+const workspaceService = createWorkspaceService({
+  configStore: workspaceConfigStore,
+  getWorktrees: (projectPath) => readWorktrees(projectPath, execSync, path, Buffer),
+});
 let mainWindow = null;
 const ptyProcesses = new Map(); // id -> pty process
 
-// ── Config persistence ─────────────────────────────────
-function normalizeSettings(settings) {
-  const nextSettings = settings && typeof settings === 'object' ? settings : {};
-  const nextBranchParents = nextSettings.subworktreeBranchParents && typeof nextSettings.subworktreeBranchParents === 'object'
-    ? /** @type {Record<string, string>} */ (nextSettings.subworktreeBranchParents)
-    : {};
-  return {
-    worktreeBasePath: typeof nextSettings.worktreeBasePath === 'string'
-      ? nextSettings.worktreeBasePath.trim()
-      : '',
-    subworktreeBranchParents: Object.fromEntries(
-      Object.entries(nextBranchParents)
-        .filter(([branch, parent]) => typeof branch === 'string' && branch.trim() && typeof parent === 'string' && parent.trim())
-        .map(([branch, parent]) => [branch.trim(), String(parent).trim()])
-    ),
-  };
-}
-
-function normalizeWorkspaceConfig(config) {
-  const nextConfig = config && typeof config === 'object' ? config : {};
-  return {
-    projects: Array.isArray(nextConfig.projects) ? nextConfig.projects : [],
-    settings: normalizeSettings(nextConfig.settings),
-  };
-}
-
-function loadConfig() {
-  try {
-    if (fs.existsSync(configPath)) {
-      workspaceConfig = normalizeWorkspaceConfig(JSON.parse(fs.readFileSync(configPath, 'utf-8')));
-    }
-  } catch (e) {
-    console.error('Failed to load config:', e);
-  }
-  workspaceConfig = normalizeWorkspaceConfig(workspaceConfig);
-  return workspaceConfig;
-}
-
-function saveConfig() {
-  try {
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify(workspaceConfig, null, 2));
-  } catch (e) {
-    console.error('Failed to save config:', e);
-  }
-}
-
 // ── Git Helpers ────────────────────────────────────────
-function getWorktrees(projectPath) {
-  return readWorktrees(projectPath, execSync, path, Buffer);
-}
-
 function getGitInfo(dirPath) {
   return readGitInfo(dirPath, execSync);
 }
@@ -185,18 +140,13 @@ function createWindow() {
 
 // ── App lifecycle ──────────────────────────────────────
 app.whenReady().then(() => {
-  loadConfig();
+  workspaceConfigStore.loadConfig();
   createWindow();
   registerWorkspaceIpc({
     ipcMain,
     dialog,
     mainWindow,
-    workspaceConfig,
-    normalizeSettings,
-    saveConfig,
-    getWorktrees,
-    path,
-    Buffer,
+    workspaceService,
   });
 
   ipcMain.handle('get-git-info', (_, dirPath) => getGitInfo(dirPath));

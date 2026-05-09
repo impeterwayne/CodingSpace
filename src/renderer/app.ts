@@ -4,6 +4,17 @@
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 const { WebLinksAddon } = require('@xterm/addon-web-links');
+const {
+  getAvailableWorktreeBranches,
+  isInvalidGitBranchName,
+  getSuggestedWorktreePath,
+  getWorktreeBasePath: getDomainWorktreeBasePath,
+  getOfficialWorktreeBasePath,
+  classifyWorktreeLocation: getDomainClassifyWorktreeLocation,
+  canCreateNestedWorktree: getDomainCanCreateNestedWorktree,
+  buildWorktreeTree: getDomainBuildWorktreeTree,
+} = require('../domain');
+
 const { initializeRendererLifecycle } = require('./lifecycle');
 const { openCreateBranchModal } = require('./modals/createBranchModal');
 const { openSettingsModal } = require('./modals/settingsModal');
@@ -431,19 +442,10 @@ const {
   withAsyncButtonState,
 } = createModalHelpers(dom);
 
-function getAvailableWorktreeBranches(project, branches) {
-  const existingWtBranches = (project.worktrees || []).map((w) => w.branch).filter(Boolean);
-  return branches.filter((branch) => !existingWtBranches.includes(branch) && !branch.startsWith('origin/'));
-}
-
 function syncWorktreePathInput(pathInput, baseDir, projectName) {
   return (branch) => {
-    pathInput.value = branch ? `${baseDir}\\${projectName}-${branchToPascalPath(branch)}` : '';
+    pathInput.value = getSuggestedWorktreePath(baseDir, projectName, branch);
   };
-}
-
-function isInvalidGitBranchName(branchName) {
-  return /[\s~^:?*\[\\]/.test(branchName);
 }
 
 async function refreshProjectWorkspaces(projectPath) {
@@ -1305,7 +1307,7 @@ function handleDropdownOutsideClick(e) {
 
 function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
-  const canAddSubWorktree = canCreateNestedWorktree(project, wt);
+  const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt, state.settings);
 
   const menu = showPositionedMenu({
     id: 'worktree-context-menu',
@@ -1380,42 +1382,8 @@ async function loadWorkspaces() {
   renderSidebar();
 }
 
-function getWorktreeBasePath(project) {
-  const configuredBasePath = state.settings?.worktreeBasePath?.trim();
-  return configuredBasePath || `${project.path}.subworktree`;
-}
-
-function getOfficialWorktreeBasePath(project) {
-  return `${project.path}.worktrees`;
-}
-
-function normalizePathForComparison(inputPath) {
-  return String(inputPath || '')
-    .replace(/[\\/]+/g, '\\')
-    .replace(/[\\]+$/, '')
-    .toLowerCase();
-}
-
-function classifyWorktreeLocation(project, wt) {
-  if (!project || !wt?.path) return 'subworktree';
-
-  const projectPath = normalizePathForComparison(project.path);
-  const worktreePath = normalizePathForComparison(wt.path);
-  const officialBasePath = normalizePathForComparison(getOfficialWorktreeBasePath(project));
-  const nestedBasePath = normalizePathForComparison(getWorktreeBasePath(project));
-
-  if (worktreePath === projectPath) return 'root';
-  if (worktreePath === officialBasePath || worktreePath.startsWith(`${officialBasePath}\\`)) return 'official';
-  if (worktreePath === nestedBasePath || worktreePath.startsWith(`${nestedBasePath}\\`)) return 'subworktree';
-  return 'subworktree';
-}
-
-function canCreateNestedWorktree(project, wt) {
-  return classifyWorktreeLocation(project, wt) !== 'root';
-}
-
 function getWorktreeDisplayMeta(project, wt) {
-  const location = classifyWorktreeLocation(project, wt);
+  const location = getDomainClassifyWorktreeLocation(project, wt, state.settings);
 
   switch (location) {
     case 'root':
@@ -1427,43 +1395,6 @@ function getWorktreeDisplayMeta(project, wt) {
     default:
       return { location: 'subworktree', badge: 'sub', title: 'Subworktree location' };
   }
-}
-
-function getNestedWorktreeParentPath(project, wt) {
-  if (classifyWorktreeLocation(project, wt) !== 'subworktree') return null;
-  if (!wt.branch) return null;
-
-  const parentBranch = state.settings?.subworktreeBranchParents?.[wt.branch];
-  if (!parentBranch) return null;
-
-  const parent = (project.worktrees || []).find((candidate) => {
-    if (!candidate?.branch) return false;
-    return candidate.branch === parentBranch && classifyWorktreeLocation(project, candidate) !== 'subworktree';
-  });
-
-  return parent?.path || null;
-}
-
-function buildWorktreeTree(project) {
-  const worktrees = project.worktrees || [];
-  const nodesByPath = new Map();
-
-  for (const wt of worktrees) {
-    nodesByPath.set(wt.path, { wt, children: [] });
-  }
-
-  const roots = [];
-  for (const wt of worktrees) {
-    const node = nodesByPath.get(wt.path);
-    const parentPath = getNestedWorktreeParentPath(project, wt);
-    if (parentPath && nodesByPath.has(parentPath)) {
-      nodesByPath.get(parentPath).children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-
-  return roots;
 }
 
 function renderSidebar() {
@@ -1483,7 +1414,7 @@ function renderSidebar() {
 
 function sidebarProjectHTML(project, index) {
   const expanded = state.expandedProjects.has(project.path);
-  const wtItems = buildWorktreeTree(project)
+  const wtItems = getDomainBuildWorktreeTree(project, state.settings)
     .map((node) => sidebarWtItemHTML(project, node)).join('');
   const actionButtons = [
     { action: 'create-branch', title: 'Create branch', icon: icons.gitBranch },
@@ -1679,17 +1610,6 @@ async function loadGitInfo(wt) {
     const dotEl = document.getElementById(`wt-dot-${wt.id}`);
     if (dotEl) dotEl.className = `sidebar-wt-dot ${info.modifiedCount > 0 ? 'modified' : 'clean'}`;
   } catch (_) {}
-}
-
-// ── Branch name → PascalCase path helper ───────────────
-function branchToPascalPath(branch) {
-  if (!branch) return '';
-  const shortName = branch.includes('/') ? branch.substring(branch.lastIndexOf('/') + 1) : branch;
-  return shortName
-    .split(/[-\s]+/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join('');
 }
 
 // ── Searchable Branch Dropdown (reusable) ──────────────
@@ -1895,10 +1815,10 @@ async function showAddSubWorktreeModal(project, sourceWorktree) {
     dom,
     state,
     api: window.api,
-    canCreateNestedWorktree,
+    canCreateNestedWorktree: (projectArg, wtArg) => getDomainCanCreateNestedWorktree(projectArg, wtArg, state.settings),
     showToast,
     getAvailableWorktreeBranches,
-    getWorktreeBasePath,
+    getWorktreeBasePath: (projectArg) => getDomainWorktreeBasePath(projectArg, state.settings),
     esc,
     branchComboHTML,
     setupBranchCombo,

@@ -17,6 +17,25 @@ function branchToPascalPath(branch) {
     .join('');
 }
 
+function slugifyWorktreeNameForBranch(worktreeName) {
+  const slug = String(worktreeName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'worktree';
+}
+
+function formatBranchTimestampPart(timestamp = Date.now()) {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`;
+}
+
+function getSuggestedSubWorktreeBranchName(worktreeName, timestamp = Date.now()) {
+  return `tmp/${slugifyWorktreeNameForBranch(worktreeName)}-${formatBranchTimestampPart(timestamp)}`;
+}
+
 function getSuggestedWorktreePath(baseDir, projectName, branch) {
   return branch ? `${baseDir}\\${projectName}-${branchToPascalPath(branch)}` : '';
 }
@@ -55,11 +74,15 @@ function canCreateNestedWorktree(project, wt, settings) {
   return classifyWorktreeLocation(project, wt, settings) !== 'root';
 }
 
-function getNestedWorktreeParentPath(project, wt, settings) {
+function getNestedWorktreeParentBranch(project, wt, settings) {
   if (classifyWorktreeLocation(project, wt, settings) !== 'subworktree') return null;
   if (!wt?.branch) return null;
 
-  const parentBranch = settings?.subworktreeBranchParents?.[wt.branch];
+  return settings?.subworktreeBranchParents?.[wt.branch] || null;
+}
+
+function getNestedWorktreeParentPath(project, wt, settings) {
+  const parentBranch = getNestedWorktreeParentBranch(project, wt, settings);
   if (!parentBranch) return null;
 
   const parent = (project?.worktrees || []).find((candidate) => {
@@ -96,11 +119,16 @@ module.exports = {
   getAvailableWorktreeBranches,
   isInvalidGitBranchName,
   branchToPascalPath,
+  slugifyWorktreeNameForBranch,
+  formatBranchTimestampPart,
+  getSuggestedSubWorktreeBranchName,
   getSuggestedWorktreePath,
   getWorktreeBasePath,
   getOfficialWorktreeBasePath,
   classifyWorktreeLocation,
   canCreateNestedWorktree,
+  getNestedWorktreeParentBranch,
   getNestedWorktreeParentPath,
   buildWorktreeTree,
 };
+

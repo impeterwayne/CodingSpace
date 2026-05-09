@@ -2,10 +2,12 @@ const assert = require('assert');
 const {
   normalizePathForComparison,
   getWorktreeBasePath,
+  getSuggestedSubWorktreeBranchName,
   getOfficialWorktreeBasePath,
   classifyWorktreeLocation,
   canCreateNestedWorktree,
   getWorktreeDisplayMeta,
+  getNestedWorktreeParentBranch,
   getNestedWorktreeParentPath,
   buildWorktreeTree,
 } = require('./index');
@@ -52,6 +54,17 @@ test('getOfficialWorktreeBasePath uses official suffix', () => {
   assert.strictEqual(getOfficialWorktreeBasePath(project), 'C:\\Repo.worktrees');
 });
 
+test('getSuggestedSubWorktreeBranchName returns git-safe tmp branch template', () => {
+  assert.strictEqual(
+    getSuggestedSubWorktreeBranchName('Feature A', new Date('2026-05-09T08:07:06Z')),
+    'tmp/feature-a-20260509-080706'
+  );
+  assert.strictEqual(
+    getSuggestedSubWorktreeBranchName(' !!! ', Date.UTC(2026, 4, 9, 8, 7, 6)),
+    'tmp/worktree-20260509-080706'
+  );
+});
+
 test('classifyWorktreeLocation matches current path rules', () => {
   assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\Repo' }, settings), 'root');
   assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\repo.worktrees\\x' }, settings), 'official');
@@ -80,8 +93,27 @@ test('getWorktreeDisplayMeta returns current badge metadata', () => {
   assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.subworktree\\nested-a' }, settings), {
     location: 'subworktree',
     badge: 'sub',
-    title: 'Subworktree location',
+    title: 'Sub-worktree location',
   });
+});
+
+test('getNestedWorktreeParentBranch resolves mapped parent branch for subworktrees only', () => {
+  assert.strictEqual(
+    getNestedWorktreeParentBranch(project, project.worktrees[2], settings),
+    'feature/a'
+  );
+  assert.strictEqual(
+    getNestedWorktreeParentBranch(project, project.worktrees[3], settings),
+    'main'
+  );
+  assert.strictEqual(
+    getNestedWorktreeParentBranch(project, project.worktrees[1], settings),
+    null
+  );
+  assert.strictEqual(
+    getNestedWorktreeParentBranch(project, { path: 'C:\\Repo.subworktree\\unknown', branch: 'missing' }, settings),
+    null
+  );
 });
 
 test('getNestedWorktreeParentPath resolves only subworktrees with mapped non-subworktree parent branch', () => {
@@ -102,6 +134,7 @@ test('getNestedWorktreeParentPath resolves only subworktrees with mapped non-sub
     null
   );
 });
+
 
 test('buildWorktreeTree attaches nested worktrees under resolved parent paths', () => {
   const roots = buildWorktreeTree(project, settings);

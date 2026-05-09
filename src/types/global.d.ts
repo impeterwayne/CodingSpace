@@ -55,6 +55,7 @@ declare global {
       getBranches: (path: string) => Promise<string[]>;
       createBranch: (opts: any) => Promise<any>;
       mergeWorktreeToBranch: (opts: any) => Promise<any>;
+      mergeSubWorktreeToParent: (opts: any) => Promise<any>;
     };
   }
 }

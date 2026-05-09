@@ -3,9 +3,9 @@ async function openSettingsModal({ dom, state, icons, configureModalFooter, show
 
   dom.modalBody.innerHTML = `
     <div class="form-group">
-      <label class="form-label">Sub Worktree Base Path</label>
+      <label class="form-label">Sub-Worktree Base Path</label>
       <input class="form-input" id="settings-worktree-base-path" placeholder="Leave empty to use projectname.subworktree" autocomplete="off" spellcheck="false" />
-      <p class="form-hint">Set where sub worktrees are stored. Leave it empty to use the default <code>projectname.subworktree</code> location.</p>
+      <p class="form-hint">Set where sub-worktrees are stored. Leave it empty to use the default <code>projectname.subworktree</code> location.</p>
     </div>
   `;
 

@@ -107,6 +107,15 @@ function findWorktree(projectPath, wtPath) {
     .find((worktree) => worktree.path && normalizeWorktreePath(worktree.path) === normalizedWtPath);
 }
 
+function findWorktreeByBranch(projectPath, branchName, excludePath = '') {
+  const normalizedExcludePath = excludePath ? normalizeWorktreePath(excludePath) : '';
+  return readWorktrees(projectPath, execSync, path, Buffer)
+    .find((worktree) => worktree.branch
+      && worktree.branch === branchName
+      && worktree.path
+      && normalizeWorktreePath(worktree.path) !== normalizedExcludePath);
+}
+
 function isLocalBranch(projectPath, branchName) {
   if (!branchName) {
     return false;
@@ -210,6 +219,87 @@ function removeWorktreeWithOptionalBranchDelete({ projectPath, wtPath, force = f
       branchDeleted: false,
     };
   }
+}
+
+function mergeSubworktreeToRecordedParent({ projectPath, sourceWorktreePath, sourceBranch }) {
+  if (!projectPath || !sourceWorktreePath || !sourceBranch) {
+    return { success: false, error: 'Project path, source worktree path, and source branch are required' };
+  }
+
+  const sourceWorktree = findWorktree(projectPath, sourceWorktreePath);
+  if (!sourceWorktree) {
+    return { success: false, error: 'Source worktree path was not found in this repository' };
+  }
+
+  if (!sourceWorktree.branch || sourceWorktree.detached || sourceWorktree.bare) {
+    return { success: false, error: 'Source worktree does not have a local branch to merge' };
+  }
+
+  if (sourceWorktree.branch !== sourceBranch) {
+    return { success: false, error: 'Source branch does not match worktree branch' };
+  }
+
+  const settings = workspaceConfigStore.getConfig().settings || {};
+  const targetBranch = settings.subworktreeBranchParents?.[sourceBranch];
+  if (!targetBranch) {
+    return { success: false, error: `Missing recorded parent branch for ${sourceBranch}` };
+  }
+
+  if (targetBranch.startsWith('origin/')) {
+    return { success: false, error: 'Recorded parent branch must be local' };
+  }
+
+  if (targetBranch === sourceBranch) {
+    return { success: false, error: 'Recorded parent branch must differ from source branch' };
+  }
+
+  if (!isLocalBranch(projectPath, targetBranch)) {
+    return { success: false, error: `Recorded parent branch was not found locally: ${targetBranch}` };
+  }
+
+  const currentBranch = (() => {
+    try {
+      return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        timeout: 10000,
+      }).trim();
+    } catch (_) {
+      return '';
+    }
+  })();
+
+  let output = '';
+  try {
+    output += execFileSync('git', ['checkout', targetBranch], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      timeout: 30000,
+    }) || '';
+    output += execFileSync('git', ['merge', sourceBranch], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      timeout: 30000,
+    }) || '';
+  } catch (e) {
+    const errorMessage = e.stderr || e.message;
+    if (/conflict|merge failed|automatic merge failed|unmerged/i.test(errorMessage)) {
+      return { success: false, error: errorMessage, mergeConflict: true };
+    }
+    return { success: false, error: errorMessage };
+  } finally {
+    if (currentBranch && currentBranch !== targetBranch) {
+      try {
+        execFileSync('git', ['checkout', currentBranch], {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000,
+        });
+      } catch (_) {}
+    }
+  }
+
+  return { success: true, output: output.trim(), targetBranch };
 }
 
 // ── Detect default shell ───────────────────────────────
@@ -499,7 +589,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('merge-worktree-to-branch', async (_, { projectPath, sourceBranch, targetBranch }) => {
+ipcMain.handle('merge-worktree-to-branch', async (_, { projectPath, sourceBranch, targetBranch }) => {
     try {
       if (!projectPath || !sourceBranch || !targetBranch) {
         return { success: false, error: 'Project path, source branch, and target branch are required' };
@@ -540,7 +630,7 @@ app.whenReady().then(() => {
           timeout: 30000,
         });
       } finally {
-        if (currentBranch && currentBranch !== targetBranch) {
+        if (currentBranch !== targetBranch) {
           try {
             execSync(`git checkout "${currentBranch}"`, {
               cwd: projectPath,
@@ -556,6 +646,53 @@ app.whenReady().then(() => {
       return { success: false, error: e.stderr || e.message };
     }
   });
+
+  ipcMain.handle('merge-subworktree-to-recorded-parent', async (_, { projectPath, sourceWorktreePath, sourceBranch }) => {
+    const mergeResult = mergeSubworktreeToRecordedParent({ projectPath, sourceWorktreePath, sourceBranch });
+    if (!mergeResult.success) {
+      return mergeResult;
+    }
+
+    const removeResult = removeWorktreeWithOptionalBranchDelete({
+      projectPath,
+      wtPath: sourceWorktreePath,
+      deleteBranch: true,
+      force: true,
+    });
+
+    if (!removeResult.success) {
+      return {
+        success: false,
+        error: removeResult.error,
+        mergeConflict: false,
+        mergedToParent: true,
+        targetBranch: mergeResult.targetBranch,
+        output: [mergeResult.output, removeResult.output].filter(Boolean).join('\n').trim(),
+        removedWorktree: removeResult.removedWorktree,
+        branchDeleted: removeResult.branchDeleted,
+      };
+    }
+
+    const settings = workspaceConfigStore.getConfig().settings || {};
+    if (settings.subworktreeBranchParents?.[sourceBranch]) {
+      const nextBranchParents = { ...settings.subworktreeBranchParents };
+      delete nextBranchParents[sourceBranch];
+      workspaceConfigStore.updateSettings({
+        ...settings,
+        subworktreeBranchParents: nextBranchParents,
+      });
+    }
+
+    return {
+      success: true,
+      targetBranch: mergeResult.targetBranch,
+      branchDeleted: true,
+      removedWorktree: true,
+      output: [mergeResult.output, removeResult.output].filter(Boolean).join('\n').trim(),
+    };
+  });
 });
+
+
 
 installPtyShutdownLifecycle(app, ptyProcesses, execSync);

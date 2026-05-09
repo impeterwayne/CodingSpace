@@ -8,6 +8,7 @@ const {
   getAvailableWorktreeBranches,
   isInvalidGitBranchName,
   getSuggestedWorktreePath,
+  getSuggestedSubWorktreeBranchName,
   getWorktreeBasePath: getDomainWorktreeBasePath,
   getOfficialWorktreeBasePath,
   classifyWorktreeLocation: getDomainClassifyWorktreeLocation,
@@ -18,7 +19,7 @@ const {
 const { initializeRendererLifecycle } = require('./lifecycle');
 const { openCreateBranchModal } = require('./modals/createBranchModal');
 const { openSettingsModal } = require('./modals/settingsModal');
-const { openAddWorktreeModal, openAddSubWorktreeModal, openMergeWorktreeModal, openForceRemoveWorktreeModal } = require('./modals/worktreeModals');
+const { openAddWorktreeModal, openAddSubWorktreeModal, openMergeWorktreeModal, openMergeSubWorktreeToParentModal, openForceRemoveWorktreeModal } = require('./modals/worktreeModals');
 const { createModalHelpers } = require('./ui/modalHelpers');
 const { createModalPrimitives } = require('./ui/modalPrimitives');
 
@@ -451,10 +452,14 @@ async function refreshProjectWorkspaces(projectPath) {
 function createWorktreeSubmitHandler({ project, combo, pathInput, button, buttonLabel, sourceWorktreePath, onSuccess }) {
   return async () => {
     const { branch: selectedBranch, isNew } = combo.getSelected();
-    if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
+    const typedBranch = typeof combo.getInputValue === 'function' ? combo.getInputValue().trim() : '';
+    const branchName = selectedBranch || typedBranch;
+    const hasExistingBranch = typeof combo.hasBranch === 'function' && combo.hasBranch(branchName);
+    const createNewBranch = isNew || (!selectedBranch && Boolean(typedBranch) && !hasExistingBranch);
+    if (!branchName) { showToast('Please select or create a branch', 'error'); return; }
     const wtPath = pathInput.value;
     if (!wtPath) { showToast('Please specify a worktree path', 'error'); return; }
-    if (isNew && isInvalidGitBranchName(selectedBranch)) {
+    if (createNewBranch && isInvalidGitBranchName(branchName)) {
       showToast('Invalid branch name', 'error');
       return;
     }
@@ -462,14 +467,14 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
     const result = await withAsyncButtonState(button, 'Creating...', async () => window.api.addWorktree({
       projectPath: project.path,
       sourceWorktreePath,
-      branchName: selectedBranch,
+      branchName,
       wtPath,
-      createBranch: isNew,
+      createBranch: createNewBranch,
     }), buttonLabel);
 
     if (result.success) {
-      if (onSuccess) await onSuccess(selectedBranch);
-      showToast(`Worktree created: ${selectedBranch}`, 'success');
+      if (onSuccess) await onSuccess(branchName);
+      showToast(`Worktree created: ${branchName}`, 'success');
       hideModal();
       await refreshProjectWorkspaces(project.path);
       return;
@@ -1303,9 +1308,9 @@ function showWorktreeContextMenu(project, wt, x, y) {
     x,
     y,
     html: `
-      ${canAddSubWorktree ? `${menuItemHTML({ action: 'add-sub-worktree', icon: icons.plus, label: 'Add nested worktree' })}${menuDividerHTML()}` : ''}
+      ${canAddSubWorktree ? `${menuItemHTML({ action: 'add-sub-worktree', icon: icons.plus, label: 'Add sub-worktree' })}${menuDividerHTML()}` : ''}
       ${menuItemHTML({ action: 'merge-to-local-branch', icon: icons.gitBranch, label: 'Merge to local branch' })}
-      ${menuDividerHTML()}
+      ${wt.branch && getDomainClassifyWorktreeLocation(project, wt, state.settings) === 'subworktree' ? `${menuItemHTML({ action: 'merge-sub-worktree-to-parent', icon: icons.gitBranch, label: 'Merge to parent branch' })}${menuDividerHTML()}` : ''}
       ${menuItemHTML({ action: 'force-remove-worktree', icon: icons.trash, label: 'Force remove worktree', title: canDeleteBranch ? `Force remove worktree. Modal can delete branch ${wt.branch}.` : 'Force remove worktree. Branch deletion unavailable for this worktree.', danger: true })}
     `,
     outsideClickHandler: handleWorktreeContextMenuOutsideClick,
@@ -1314,6 +1319,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
   bindMenuActions(menu, {
     'add-sub-worktree': () => showAddSubWorktreeModal(project, wt),
     'merge-to-local-branch': () => showMergeWorktreeModal(project, wt),
+    'merge-sub-worktree-to-parent': () => showMergeSubWorktreeToParentModal(project, wt),
     'force-remove-worktree': () => showForceRemoveWorktreeModal(project, wt),
   }, hideWorktreeContextMenu);
 }
@@ -1379,9 +1385,9 @@ function getWorktreeDisplayMeta(project, wt) {
     case 'official':
       return { location, badge: 'official', title: 'Official worktree location' };
     case 'subworktree':
-      return { location, badge: 'sub', title: 'Subworktree location' };
+      return { location, badge: 'sub', title: 'Sub-worktree location' };
     default:
-      return { location: 'subworktree', badge: 'sub', title: 'Subworktree location' };
+      return { location: 'subworktree', badge: 'sub', title: 'Sub-worktree location' };
   }
 }
 
@@ -1629,6 +1635,14 @@ function setupBranchCombo({ containerEl, branches, onSelect, placeholder = 'Sear
     if (onSelect) onSelect('', false);
   }
 
+  function setDraftValue(value) {
+    selectedBranch = '';
+    isCreateNew = false;
+    branchSelected.style.display = 'none';
+    branchInput.style.display = '';
+    branchInput.value = value;
+  }
+
   function renderDropdown(query) {
     const q = query.trim().toLowerCase();
     const filtered = q
@@ -1708,6 +1722,10 @@ function setupBranchCombo({ containerEl, branches, onSelect, placeholder = 'Sear
 
   return {
     getSelected: () => ({ branch: selectedBranch, isNew: isCreateNew }),
+    getInputValue: () => branchInput.value,
+    hasBranch: (branch) => branches.includes(branch),
+    setDraftValue,
+    select,
     focus: () => branchInput.focus(),
   };
 }
@@ -1793,7 +1811,9 @@ async function showAddSubWorktreeModal(project, sourceWorktree) {
     canCreateNestedWorktree: (projectArg, wtArg) => getDomainCanCreateNestedWorktree(projectArg, wtArg, state.settings),
     showToast,
     getAvailableWorktreeBranches,
+    getSuggestedSubWorktreeBranchName,
     getWorktreeBasePath: (projectArg) => getDomainWorktreeBasePath(projectArg, state.settings),
+    getSuggestedWorktreePath,
     esc,
     branchComboHTML,
     setupBranchCombo,
@@ -1823,6 +1843,26 @@ async function showMergeWorktreeModal(project, wt) {
     withAsyncButtonState,
     refreshProjectWorkspaces,
     icons,
+  });
+}
+
+async function showMergeSubWorktreeToParentModal(project, wt) {
+  return openMergeSubWorktreeToParentModal({
+    project,
+    wt,
+    dom,
+    state,
+    api: window.api,
+    showToast,
+    esc,
+    configureModalFooter,
+    showModal,
+    hideModal,
+    withAsyncButtonState,
+    refreshProjectWorkspaces,
+    icons,
+    closeWorktreeOwnedSessions,
+    releaseWorktreeOwnedSessions,
   });
 }
 

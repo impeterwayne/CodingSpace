@@ -57,4 +57,5 @@ contextBridge.exposeInMainWorld('api', {
   getBranches: (path) => ipcRenderer.invoke('get-branches', path),
   createBranch: (opts) => ipcRenderer.invoke('create-branch', opts),
   mergeWorktreeToBranch: (opts) => ipcRenderer.invoke('merge-worktree-to-branch', opts),
+  mergeSubWorktreeToParent: (opts) => ipcRenderer.invoke('merge-subworktree-to-recorded-parent', opts),
 });

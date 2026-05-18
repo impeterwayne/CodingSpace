@@ -1488,6 +1488,16 @@ function renderSidebar() {
   });
 }
 
+function getWorkspaceInitials(name: string) {
+  if (!name) return '';
+  const first = name.charAt(0);
+  const nextUpper = name.substring(1).match(/[A-Z]/);
+  if (nextUpper) {
+    return first + nextUpper[0];
+  }
+  return name.substring(0, 2);
+}
+
 function sidebarProjectHTML(project, index) {
   const expanded = state.expandedProjects.has(project.path);
   const wtItems = getDomainBuildWorktreeTree(project, state.settings)
@@ -1506,7 +1516,7 @@ function sidebarProjectHTML(project, index) {
       <div class="sidebar-project-header" data-action="toggle-project" data-path="${esc(project.path)}">
         <div class="sidebar-project-left">
           <span class="sidebar-project-chevron ${expanded ? 'expanded' : ''}">${icons.chevron}</span>
-          <div class="sidebar-project-icon">${icons.gitFork}</div>
+          <div class="sidebar-project-icon">${esc(getWorkspaceInitials(project.name))}</div>
           <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
         </div>
         <div class="sidebar-project-actions">

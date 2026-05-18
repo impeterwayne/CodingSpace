@@ -3,16 +3,16 @@
    ═══════════════════════════════════════════════════════ */
 
 :root {
-  --bg-primary: #08080d;
-  --bg-secondary: #0c0c14;
-  --bg-tertiary: #111119;
-  --bg-card: #0f0f18;
-  --bg-card-hover: #141420;
-  --bg-surface: #1a1a28;
-  --bg-elevated: #1e1e2e;
-  --bg-input: #12121c;
-  --bg-input-focus: #16162a;
-  --bg-sidebar: #0a0a12;
+  --bg-primary: #000000;
+  --bg-secondary: #050505;
+  --bg-tertiary: #0a0a0a;
+  --bg-card: #080808;
+  --bg-card-hover: #0c0c0c;
+  --bg-surface: #0f0f0f;
+  --bg-elevated: #141414;
+  --bg-input: #080808;
+  --bg-input-focus: #111111;
+  --bg-sidebar: #000000;
 
   --accent: #6c5ce7;
   --accent-light: #a29bfe;
@@ -349,9 +349,12 @@ body {
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
   background: var(--accent-dim);
-  border-radius: var(--radius-xs);
+  border-radius: 50%;
   color: var(--accent-light);
   flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 .sidebar-project-name {
   font-size: 12.5px;
@@ -472,7 +475,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: row;
-  background: #0c0c0c; /* Windows Terminal dark bg */
+  background: #000000; /* Windows Terminal dark bg */
   overflow: hidden;
   position: relative;
 }
@@ -483,8 +486,8 @@ body {
   flex-direction: column;
   width: 180px;
   min-width: 180px;
-  background: #141418;
-  border-right: 1px solid #2a2a30;
+  background: #050505;
+  border-right: 1px solid #1a1a1a;
   flex-shrink: 0;
   overflow: hidden;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -706,7 +709,7 @@ body {
   width: var(--workspace-sidebar-width);
   min-width: 208px;
   max-width: 280px;
-  background: linear-gradient(180deg, #11111a 0%, #0c0c14 100%);
+  background: #000000;
   border-left: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;

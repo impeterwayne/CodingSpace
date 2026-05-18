@@ -489,6 +489,12 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
 // EMBEDDED TERMINAL MANAGEMENT
 // ═══════════════════════════════════════════════════════
 
+const FORCED_MOUSE_MODE_SEQUENCE = '\x1b[?1002h\x1b[?1006h';
+
+function forceTerminalMouseMode(term) {
+  term.write(FORCED_MOUSE_MODE_SEQUENCE);
+}
+
 async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'terminal' } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
@@ -519,6 +525,7 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
 
   // Open xterm in pane
   term.open(paneEl);
+  forceTerminalMouseMode(term);
 
   // Fit after DOM settles
   requestAnimationFrame(() => {
@@ -617,6 +624,7 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
   dom.terminalContainer.appendChild(paneEl);
 
   term.open(paneEl);
+  forceTerminalMouseMode(term);
   requestAnimationFrame(() => fitAddon.fit());
 
   // Create a shell PTY, then type the resolved tool launch command into it.
@@ -845,6 +853,7 @@ function promotePrewarmedTerminal(toolKey) {
   paneEl.id = `pane-${id}`;
   dom.terminalContainer.appendChild(paneEl);
   term.open(paneEl);
+  forceTerminalMouseMode(term);
 
   const cleanup = attachPtyToTerminal(id, term, fitAddon, paneEl);
 

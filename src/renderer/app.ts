@@ -4,6 +4,7 @@
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 const { WebLinksAddon } = require('@xterm/addon-web-links');
+const { WebglAddon } = require('@xterm/addon-webgl');
 const {
   getAvailableWorktreeBranches,
   isInvalidGitBranchName,
@@ -22,7 +23,22 @@ const { openAddWorktreeModal, openAddSubWorktreeModal, openMergeWorktreeModal, o
 const { createModalHelpers } = require('./ui/modalHelpers');
 const { createModalPrimitives } = require('./ui/modalPrimitives');
 
-type ToolTab = { key: string; action: string; command: string; label: string; iconKey: string; prewarm: boolean; launchArgs: string[]; title: string; warningBadge?: string };
+type TerminalBehavior = {
+  forceMouseMode: boolean;
+};
+
+type ToolTab = {
+  key: string;
+  action: string;
+  command: string;
+  label: string;
+  iconKey: string;
+  prewarm: boolean;
+  launchArgs: string[];
+  title: string;
+  warningBadge?: string;
+  behavior: TerminalBehavior;
+};
 
 // ── Windows Terminal color scheme ──────────────────────
 const WT_THEME = {
@@ -272,9 +288,12 @@ const TOOL_TABS: Record<string, ToolTab> = {
     command: 'opencode',
     label: 'OpenCode',
     iconKey: 'opencode',
-    prewarm: true,
+    prewarm: false,
     launchArgs: [],
     title: 'Open OpenCode in a new terminal tab',
+    behavior: {
+      forceMouseMode: true,
+    },
   },
   gemini: {
     key: 'gemini',
@@ -282,9 +301,12 @@ const TOOL_TABS: Record<string, ToolTab> = {
     command: 'gemini',
     label: 'Gemini',
     iconKey: 'gemini',
-    prewarm: true,
+    prewarm: false,
     launchArgs: [],
     title: 'Open Gemini in a new terminal tab',
+    behavior: {
+      forceMouseMode: false,
+    },
   },
   claudeDangerous: {
     key: 'claudeDangerous',
@@ -296,6 +318,9 @@ const TOOL_TABS: Record<string, ToolTab> = {
     launchArgs: ['--dangerously-skip-permissions'],
     title: 'Open Claude with --dangerously-skip-permissions. Only use this in isolated/sandboxed environments.',
     warningBadge: 'danger',
+    behavior: {
+      forceMouseMode: false,
+    },
   },
 };
 
@@ -330,6 +355,34 @@ function buildToolSessionName(tool, wtName) {
   const safeName = wtName.replace(/[^a-zA-Z0-9]/g, '_');
   const safeToolName = tool.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
   return `${safeName}_${safeToolName}_${Date.now()}`;
+}
+
+const DEFAULT_TERMINAL_BEHAVIOR: TerminalBehavior = {
+  forceMouseMode: false,
+};
+
+function normalizeTerminalBehavior(behavior: Partial<TerminalBehavior> = {}): TerminalBehavior {
+  return {
+    forceMouseMode: Boolean(behavior.forceMouseMode),
+  };
+}
+
+function applyTerminalBehavior(term, behavior: TerminalBehavior) {
+  if (behavior.forceMouseMode) {
+    forceTerminalMouseMode(term);
+  }
+
+  return () => {};
+}
+
+function loadRendererAddons(term, fitAddon) {
+  term.loadAddon(fitAddon);
+  term.loadAddon(new WebLinksAddon());
+  try {
+    term.loadAddon(new WebglAddon());
+  } catch (error) {
+    console.warn('Failed to enable WebGL renderer:', error?.message || error);
+  }
 }
 
 function menuItemHTML({ action, icon, label, title = '', badges = [], danger = false, iconClass = 'terminal-icon' }) {
@@ -495,7 +548,7 @@ function forceTerminalMouseMode(term) {
   term.write(FORCED_MOUSE_MODE_SEQUENCE);
 }
 
-async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'terminal' } = {}) {
+async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'terminal', behavior = DEFAULT_TERMINAL_BEHAVIOR } = {}) {
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd; // associate terminal with this worktree
 
@@ -514,8 +567,7 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
   });
 
   const fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.loadAddon(new WebLinksAddon());
+  loadRendererAddons(term, fitAddon);
 
   // Create pane element
   const paneEl = document.createElement('div');
@@ -525,9 +577,11 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
 
   // Open xterm in pane
   term.open(paneEl);
-  forceTerminalMouseMode(term);
+  const terminalBehavior = normalizeTerminalBehavior(behavior);
+  const cleanupBehavior = applyTerminalBehavior(term, terminalBehavior);
 
   // Fit after DOM settles
+
   requestAnimationFrame(() => {
     fitAddon.fit();
   });
@@ -565,8 +619,9 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
 
   // Store terminal info (with worktree association)
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey, behavior: terminalBehavior,
     cleanup: () => {
+      cleanupBehavior();
       cleanupData();
       cleanupExit();
       onDataDisposable.dispose();
@@ -596,8 +651,12 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
  * process — giving it proper terminal allocation (fixes opencode/gemini not
  * spawning when typed into a shell).
  */
-async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string; iconKey?: string } = {}) {
-  const { command, launchArgs = [], worktreePath = '', iconKey = 'terminal' } = options;
+async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string; iconKey?: string; behavior?: Partial<TerminalBehavior> } = {}) {
+  const { command, launchArgs = [], worktreePath = '', iconKey = 'terminal', behavior = DEFAULT_TERMINAL_BEHAVIOR } = options;
+  if (!command) {
+    showToast('Missing tool command', 'error');
+    return null;
+  }
   const id = `term-${++state.terminalCounter}`;
   const wtPath = worktreePath || cwd;
 
@@ -615,8 +674,7 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
   });
 
   const fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.loadAddon(new WebLinksAddon());
+  loadRendererAddons(term, fitAddon);
 
   const paneEl = document.createElement('div');
   paneEl.className = 'terminal-pane';
@@ -624,10 +682,10 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
   dom.terminalContainer.appendChild(paneEl);
 
   term.open(paneEl);
-  forceTerminalMouseMode(term);
+  const terminalBehavior = normalizeTerminalBehavior(behavior);
+  const cleanupBehavior = applyTerminalBehavior(term, terminalBehavior);
   requestAnimationFrame(() => fitAddon.fit());
 
-  // Create a shell PTY, then type the resolved tool launch command into it.
   const result = await window.api.ptyCreate({ cwd, id });
   if (!result.success) {
     showToast(`Failed to launch ${command}: ${result.error}`, 'error');
@@ -664,8 +722,9 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
   });
 
   state.terminals.set(id, {
-    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey,
+    term, fitAddon, paneEl, name, cwd, worktreePath: wtPath, iconKey, behavior: terminalBehavior,
     cleanup: () => {
+      cleanupBehavior();
       cleanupData();
       cleanupExit();
       onDataDisposable.dispose();
@@ -831,6 +890,7 @@ function promotePrewarmedTerminal(toolKey) {
 
   const id = pw.id;
   const tabLabel = buildToolTabLabel(tool, wtName);
+  const terminalBehavior = normalizeTerminalBehavior(tool.behavior);
 
   const term = new Terminal({
     theme: WT_THEME,
@@ -845,17 +905,16 @@ function promotePrewarmedTerminal(toolKey) {
     tabStopWidth: 4,
   });
   const fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.loadAddon(new WebLinksAddon());
+  loadRendererAddons(term, fitAddon);
 
   const paneEl = document.createElement('div');
   paneEl.className = 'terminal-pane';
   paneEl.id = `pane-${id}`;
   dom.terminalContainer.appendChild(paneEl);
   term.open(paneEl);
-  forceTerminalMouseMode(term);
+  const cleanupBehavior = applyTerminalBehavior(term, terminalBehavior);
 
-  const cleanup = attachPtyToTerminal(id, term, fitAddon, paneEl);
+  const cleanup = attachPtyToTerminal(id, term, fitAddon, paneEl, cleanupBehavior);
 
   // Register in the terminals map
   state.terminals.set(id, {
@@ -866,6 +925,7 @@ function promotePrewarmedTerminal(toolKey) {
     cwd: pw.cwd,
     worktreePath: pw.worktreePath,
     iconKey: tool.iconKey,
+    behavior: terminalBehavior,
     cleanup,
   });
 
@@ -1275,6 +1335,7 @@ function createToolTab(toolKey) {
     launchArgs: tool.launchArgs,
     worktreePath: wtPath,
     iconKey: tool.iconKey,
+    behavior: tool.behavior,
   });
 }
 

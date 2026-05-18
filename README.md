@@ -1,7 +1,5 @@
 # Coding Space
 
-My Coding Space
-
 ## Features
 
 - **Git Worktree Management** — Auto-detects all worktrees in your project.
@@ -45,19 +43,6 @@ All artifacts are written to the `release/` directory:
 | `Coding Space-x.x.x-Portable.exe` | Standalone portable EXE (no installation needed) |
 | `win-unpacked/` | Unpacked app directory (created by `npm run pack`) |
 
-### Other Build Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run build:renderer` | Bundle the renderer JS only (used by `start` and `make`) |
-
-## Usage
-
-1. Click **Add Project** to select a git repository root.
-2. Select a worktree to view its integrated terminal.
-3. Use the **+** button in the terminal tab bar to open new terminals, OpenCode, Gemini, or Claude.
-4. The Claude menu includes a **Claude (skip permissions)** option that launches `claude --dangerously-skip-permissions`. Use it only in isolated or sandboxed environments.
-5. Use quick action buttons to open the worktree in VS Code, Android Studio, or Antigravity.
 
 ## Requirements
 

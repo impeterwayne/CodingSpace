@@ -427,6 +427,24 @@ app.whenReady().then(() => {
     }
   }
 
+  function findAntigravityAgentExecutable() {
+    const possiblePaths = [
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    try {
+      return resolveToolLaunch('antigravity').file;
+    } catch (_) {
+      return 'antigravity';
+    }
+  }
+
   ipcMain.handle('open-in-antigravity', (_, dirPath) => {
     try {
       const exe = findAntigravityExecutable();
@@ -444,6 +462,30 @@ app.whenReady().then(() => {
       }
 
       // Launch Antigravity IDE in the worktree directory safely (no shell-escaping issues)
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: false, detached: true, stdio: 'ignore' });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('open-in-antigravity-agent', (_, dirPath) => {
+    try {
+      const exe = findAntigravityAgentExecutable();
+      const ext = path.extname(exe).toLowerCase();
+      
+      let spawnFile;
+      let spawnArgs;
+      
+      if (ext === '.cmd' || ext === '.bat') {
+        spawnFile = 'cmd.exe';
+        spawnArgs = ['/d', '/c', exe, dirPath];
+      } else {
+        spawnFile = exe;
+        spawnArgs = [dirPath];
+      }
+
+      // Launch Antigravity Agent Manager in the worktree directory safely
       spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: false, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {

@@ -628,8 +628,7 @@ body {
 .terminal-tab-icon.gemini-icon,
 .terminal-tab-icon.claude-icon,
 .terminal-tab-icon.terminal-icon,
-.terminal-tab-icon.windows-terminal-icon,
-.terminal-tab-icon.antigravity-icon {
+.terminal-tab-icon.windows-terminal-icon {
   background-color: #ffffff;
   color: #000000;
   border-radius: 4px;
@@ -637,11 +636,11 @@ body {
   height: 18px;
   justify-content: center;
 }
-.terminal-tab-icon.antigravity-icon svg path {
-  fill: currentColor !important;
-}
-.terminal-tab-icon.antigravity-icon svg g {
-  filter: none !important;
+.terminal-tab-icon.antigravity-icon {
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  justify-content: center;
 }
 .terminal-tab-name {
   flex: 1;
@@ -971,6 +970,11 @@ body {
   flex-shrink: 0;
 }
 
+#btn-antigravity-agent .workspace-tool-icon {
+  background-color: #ffffff;
+  border-radius: 4px;
+}
+
 .workspace-tool-icon svg {
   display: block;
 }
@@ -1034,19 +1038,12 @@ body {
 .tab-dropdown-icon.gemini-icon,
 .tab-dropdown-icon.claude-icon,
 .tab-dropdown-icon.terminal-icon,
-.tab-dropdown-icon.windows-terminal-icon,
-.tab-dropdown-icon.antigravity-icon {
+.tab-dropdown-icon.windows-terminal-icon {
   background-color: #ffffff;
   color: #000000;
 }
 .tab-dropdown-icon.android-icon {
   color: #3ddc84;
-}
-.tab-dropdown-icon.antigravity-icon svg path {
-  fill: currentColor !important;
-}
-.tab-dropdown-icon.antigravity-icon svg g {
-  filter: none !important;
 }
 .tab-dropdown-icon.danger-icon {
   color: #ff6b6b;
@@ -1060,8 +1057,7 @@ body {
 .tab-dropdown-item:hover .tab-dropdown-icon.gemini-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.claude-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.terminal-icon,
-.tab-dropdown-item:hover .tab-dropdown-icon.windows-terminal-icon,
-.tab-dropdown-item:hover .tab-dropdown-icon.antigravity-icon {
+.tab-dropdown-item:hover .tab-dropdown-icon.windows-terminal-icon {
   background-color: #e8e8e8;
   color: #000000;
 }

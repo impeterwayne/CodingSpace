@@ -140,6 +140,7 @@ const dom = {
   btnExplorer: $('#btn-explorer'),
   btnAndroidStudio: $('#btn-android-studio'),
   btnAntigravity: $('#btn-antigravity'),
+  btnAntigravityAgent: $('#btn-antigravity-agent'),
   btnToggleWorkspaceSidebar: $('#btn-toggle-workspace-sidebar'),
   sidebarResizeHandle: $('#sidebar-resize-handle'),
   sidebar: $('#sidebar'),
@@ -1448,6 +1449,7 @@ bindWorktreeQuickAction(dom.btnVsCode, (wtPath) => window.api.openInEditor(wtPat
 bindWorktreeQuickAction(dom.btnExplorer, (wtPath) => window.api.openInExplorer(wtPath), 'Opening Explorer...');
 bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndroidStudio(wtPath), 'Opening Android Studio...');
 bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
+bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAntigravityAgent(wtPath), 'Opening Agent Manager...');
 
 // ═══════════════════════════════════════════════════════
 // SIDEBAR

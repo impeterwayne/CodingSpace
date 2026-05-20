@@ -36,6 +36,7 @@ declare global {
       openInExplorer: (path: string) => Promise<any>;
       openInAndroidStudio: (path: string) => Promise<any>;
       openInAntigravity: (path: string) => Promise<any>;
+      openInAntigravityAgent: (path: string) => Promise<any>;
       ptyCreate: (opts: any) => Promise<any>;
       ptyCreateTool: (opts: any) => Promise<any>;
       resolveToolLaunch: (opts: { command: string; args?: string[] }) => Promise<any>;

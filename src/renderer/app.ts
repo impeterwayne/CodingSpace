@@ -145,6 +145,7 @@ const dom = {
   sidebarResizeHandle: $('#sidebar-resize-handle'),
   sidebar: $('#sidebar'),
   workspaceSidebar: $('#workspace-sidebar'),
+  tabResizeHandle: $('#tab-resize-handle'),
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
@@ -209,6 +210,40 @@ dom.btnRefreshAll.addEventListener('click', async () => {
     if (isResizing) {
       isResizing = false;
       dom.sidebarResizeHandle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      fitActiveTerminal();
+    }
+  });
+})();
+
+// ── Tab Sidebar Resize ─────────────────────────────────
+(function initTabSidebarResize() {
+  let isResizing = false;
+  
+  dom.tabResizeHandle.addEventListener('mousedown', (e) => {
+    if (state.tabSidebarCollapsed) return; // Do not resize if collapsed
+    isResizing = true;
+    dom.tabResizeHandle.classList.add('active');
+    dom.terminalTabs.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const sidebarWidth = dom.sidebar.getBoundingClientRect().width;
+    const computedWidth = Math.min(350, Math.max(140, e.clientX - sidebarWidth));
+    document.documentElement.style.setProperty('--tab-sidebar-width', computedWidth + 'px');
+    fitActiveTerminal();
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      dom.tabResizeHandle.classList.remove('active');
+      dom.terminalTabs.classList.remove('resizing');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       fitActiveTerminal();

@@ -479,14 +479,14 @@ app.whenReady().then(() => {
       
       if (ext === '.cmd' || ext === '.bat') {
         spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe, dirPath];
+        spawnArgs = ['/d', '/c', exe];
       } else {
         spawnFile = exe;
-        spawnArgs = [dirPath];
+        spawnArgs = [];
       }
 
-      // Launch Antigravity Agent Manager in the worktree directory safely
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: false, detached: true, stdio: 'ignore' });
+      // Launch Antigravity Agent Manager independently
+      spawn(spawnFile, spawnArgs, { cwd: path.dirname(exe), shell: false, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

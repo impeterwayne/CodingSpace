@@ -295,6 +295,19 @@ const TOOL_TABS: Record<string, ToolTab> = {
       forceMouseMode: true,
     },
   },
+  agy: {
+    key: 'agy',
+    action: 'new-agy',
+    command: 'agy',
+    label: 'Antigravity CLI',
+    iconKey: 'antigravity',
+    prewarm: false,
+    launchArgs: [],
+    title: 'Open Antigravity CLI in a new terminal tab',
+    behavior: {
+      forceMouseMode: false,
+    },
+  },
   gemini: {
     key: 'gemini',
     action: 'new-gemini',

@@ -40,6 +40,7 @@
   --border-default: rgba(255, 255, 255, 0.07);
   --border-strong: rgba(255, 255, 255, 0.12);
   --border-accent: rgba(108, 92, 231, 0.25);
+  --border-contrast-white: rgba(255, 255, 255, 0.25);
 
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -210,7 +211,7 @@ body {
   min-width: 240px;
   max-width: 500px;
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-contrast-white);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -487,7 +488,7 @@ body {
   width: 180px;
   min-width: 180px;
   background: #050505;
-  border-right: 1px solid #1a1a1a;
+  border-right: 1px solid var(--border-contrast-white);
   flex-shrink: 0;
   overflow: hidden;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -627,13 +628,20 @@ body {
 .terminal-tab-icon.gemini-icon,
 .terminal-tab-icon.claude-icon,
 .terminal-tab-icon.terminal-icon,
-.terminal-tab-icon.windows-terminal-icon {
+.terminal-tab-icon.windows-terminal-icon,
+.terminal-tab-icon.antigravity-icon {
   background-color: #ffffff;
   color: #000000;
   border-radius: 4px;
   width: 18px;
   height: 18px;
   justify-content: center;
+}
+.terminal-tab-icon.antigravity-icon svg path {
+  fill: currentColor !important;
+}
+.terminal-tab-icon.antigravity-icon svg g {
+  filter: none !important;
 }
 .terminal-tab-name {
   flex: 1;
@@ -710,7 +718,7 @@ body {
   min-width: 208px;
   max-width: 280px;
   background: #000000;
-  border-left: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-contrast-white);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1026,15 +1034,19 @@ body {
 .tab-dropdown-icon.gemini-icon,
 .tab-dropdown-icon.claude-icon,
 .tab-dropdown-icon.terminal-icon,
-.tab-dropdown-icon.windows-terminal-icon {
+.tab-dropdown-icon.windows-terminal-icon,
+.tab-dropdown-icon.antigravity-icon {
   background-color: #ffffff;
   color: #000000;
 }
 .tab-dropdown-icon.android-icon {
   color: #3ddc84;
 }
-.tab-dropdown-icon.antigravity-icon {
-  color: #f5a623;
+.tab-dropdown-icon.antigravity-icon svg path {
+  fill: currentColor !important;
+}
+.tab-dropdown-icon.antigravity-icon svg g {
+  filter: none !important;
 }
 .tab-dropdown-icon.danger-icon {
   color: #ff6b6b;
@@ -1048,12 +1060,12 @@ body {
 .tab-dropdown-item:hover .tab-dropdown-icon.gemini-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.claude-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.terminal-icon,
-.tab-dropdown-item:hover .tab-dropdown-icon.windows-terminal-icon {
+.tab-dropdown-item:hover .tab-dropdown-icon.windows-terminal-icon,
+.tab-dropdown-item:hover .tab-dropdown-icon.antigravity-icon {
   background-color: #e8e8e8;
   color: #000000;
 }
 .tab-dropdown-item:hover .tab-dropdown-icon.android-icon { color: #69f0ae; }
-.tab-dropdown-item:hover .tab-dropdown-icon.antigravity-icon { color: #ffcc02; }
 .tab-dropdown-item:hover .tab-dropdown-icon.danger-icon { color: #ff8a8a; }
 
 .tab-dropdown-badge {

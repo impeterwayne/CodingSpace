@@ -407,10 +407,44 @@ app.whenReady().then(() => {
     }
   });
 
+  function findAntigravityExecutable() {
+    const possiblePaths = [
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'bin', 'antigravity-ide.cmd'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity IDE', 'Antigravity IDE.exe'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    try {
+      return resolveToolLaunch('antigravity-ide').file;
+    } catch (_) {
+      return 'antigravity-ide';
+    }
+  }
+
   ipcMain.handle('open-in-antigravity', (_, dirPath) => {
     try {
-      // Launch Antigravity in the worktree directory
-      spawn('antigravity', [dirPath], { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
+      const exe = findAntigravityExecutable();
+      const ext = path.extname(exe).toLowerCase();
+      
+      let spawnFile;
+      let spawnArgs;
+      
+      if (ext === '.cmd' || ext === '.bat') {
+        spawnFile = 'cmd.exe';
+        spawnArgs = ['/d', '/c', exe, dirPath];
+      } else {
+        spawnFile = exe;
+        spawnArgs = [dirPath];
+      }
+
+      // Launch Antigravity IDE in the worktree directory safely (no shell-escaping issues)
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: false, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

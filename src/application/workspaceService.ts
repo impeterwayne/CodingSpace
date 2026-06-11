@@ -20,7 +20,11 @@ function createWorkspaceService({ configStore, getWorktrees, now = () => Date.no
   }
 
   function getWorkspaces() {
-    return getWorkspaceConfig().projects;
+    return [...getWorkspaceConfig().projects].sort((a, b) => {
+      const timeA = a.addedAt || 0;
+      const timeB = b.addedAt || 0;
+      return timeB - timeA;
+    });
   }
 
   function getSettings() {

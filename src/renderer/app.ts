@@ -294,6 +294,7 @@ const iconRaw = {
   'windows-terminal': loadIcon('windows-terminal'),
   android: loadIcon('android'),
   antigravity: loadIcon('antigravity'),
+  'more-vertical': loadIcon('more-vertical'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -315,6 +316,7 @@ const icons = {
   'windows-terminal': iconSvg(iconRaw['windows-terminal'], 12),
   android: iconSvg(iconRaw.android, 12),
   antigravity: iconSvg(iconRaw.antigravity, 12),
+  moreVertical: iconSvg(iconRaw['more-vertical'], 12),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -1391,6 +1393,8 @@ function createToolTab(toolKey) {
 
 function showTabDropdown() {
   hideTabDropdown();
+  hideProjectOptionsMenu();
+  hideWorktreeContextMenu();
 
   const dropdown = showPositionedMenu({
     id: 'tab-dropdown',
@@ -1431,6 +1435,8 @@ function handleDropdownOutsideClick(e) {
 
 function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
+  hideProjectOptionsMenu();
+  hideTabDropdown();
   const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt, state.settings);
   const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
@@ -1468,6 +1474,56 @@ function handleWorktreeContextMenuOutsideClick(e) {
   }
 }
 
+function showProjectOptionsMenu(project, x, y) {
+  hideProjectOptionsMenu();
+  hideWorktreeContextMenu();
+  hideTabDropdown();
+
+  const menu = showPositionedMenu({
+    id: 'project-options-menu',
+    className: 'project-options-menu tab-dropdown',
+    x,
+    y,
+    html: `
+      ${menuItemHTML({ action: 'add-wt', icon: icons.plus, label: 'Add worktree' })}
+      ${menuItemHTML({ action: 'create-branch', icon: icons.gitBranch, label: 'Create branch' })}
+      ${menuItemHTML({ action: 'fetch', icon: icons.download, label: 'Fetch' })}
+      ${menuDividerHTML()}
+      ${menuItemHTML({ action: 'remove', icon: icons.trash, label: 'Remove project', danger: true })}
+    `,
+    outsideClickHandler: handleProjectOptionsMenuOutsideClick,
+  });
+
+  bindMenuActions(menu, {
+    'create-branch': () => showCreateBranchModal(project),
+    'add-wt': () => showAddWorktreeModal(project),
+    'fetch': async () => {
+      showToast('Fetching...', 'info');
+      const result = await window.api.gitFetch(project.path);
+      showToast(result.success ? 'Fetch complete' : `Fetch failed: ${result.error}`, result.success ? 'success' : 'error');
+      if (result.success) await loadWorkspaces();
+    },
+    'remove': async () => {
+      await window.api.removeProject(project.path);
+      showToast(`Removed: ${project.name}`, 'info');
+      await loadWorkspaces();
+    },
+  }, hideProjectOptionsMenu);
+}
+
+function hideProjectOptionsMenu() {
+  const existing = document.getElementById('project-options-menu');
+  if (existing) existing.remove();
+  document.removeEventListener('click', handleProjectOptionsMenuOutsideClick);
+}
+
+function handleProjectOptionsMenuOutsideClick(e) {
+  const menu = document.getElementById('project-options-menu');
+  if (menu && !menu.contains(e.target)) {
+    hideProjectOptionsMenu();
+  }
+}
+
 // New tab button — show dropdown menu
 dom.tabNewBtn.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1486,7 +1542,6 @@ bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndro
 bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
 bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAntigravityAgent(wtPath), 'Opening Agent Manager...');
 
-// ═══════════════════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════════════════
 
@@ -1536,6 +1591,7 @@ function renderSidebar() {
     attachSidebarProjectEvents(project);
     (project.worktrees || []).forEach((wt) => loadGitInfo(wt));
   });
+  updateSidebarActiveState();
 }
 
 function getWorkspaceInitials(name: string) {
@@ -1552,14 +1608,12 @@ function sidebarProjectHTML(project, index) {
   const expanded = state.expandedProjects.has(project.path);
   const wtItems = getDomainBuildWorktreeTree(project, state.settings)
     .map((node) => sidebarWtItemHTML(project, node)).join('');
-  const actionButtons = [
-    { action: 'create-branch', title: 'Create branch', icon: icons.gitBranch },
-    { action: 'add-wt', title: 'Add worktree', icon: icons.plus },
-    { action: 'fetch', title: 'Fetch', icon: icons.download },
-    { action: 'remove', title: 'Remove', icon: icons.trash, danger: true },
-  ]
-    .map((action) => sidebarActionButtonHTML({ ...action, path: project.path }))
-    .join('');
+  const optionsButton = sidebarActionButtonHTML({
+    action: 'project-options',
+    path: project.path,
+    title: 'Options',
+    icon: icons.moreVertical,
+  });
 
   return `
     <div class="sidebar-project" data-project="${esc(project.path)}" style="animation-delay:${index * 0.04}s">
@@ -1570,7 +1624,7 @@ function sidebarProjectHTML(project, index) {
           <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
         </div>
         <div class="sidebar-project-actions">
-          ${actionButtons}
+          ${optionsButton}
         </div>
       </div>
       <div class="sidebar-wt-list ${expanded ? '' : 'collapsed'}" data-wt-list="${esc(project.path)}"
@@ -1636,31 +1690,17 @@ function attachSidebarProjectEvents(project) {
         }
       }
     });
+
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showProjectOptionsMenu(project, e.clientX, e.clientY);
+    });
   }
 
-  el.querySelector('[data-action="create-branch"]')?.addEventListener('click', (e) => {
+  el.querySelector('[data-action="project-options"]')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    showCreateBranchModal(project);
-  });
-
-  el.querySelector('[data-action="add-wt"]')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    showAddWorktreeModal(project);
-  });
-
-  el.querySelector('[data-action="fetch"]')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    showToast('Fetching...', 'info');
-    const result = await window.api.gitFetch(project.path);
-    showToast(result.success ? 'Fetch complete' : `Fetch failed: ${result.error}`, result.success ? 'success' : 'error');
-    if (result.success) await loadWorkspaces();
-  });
-
-  el.querySelector('[data-action="remove"]')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    await window.api.removeProject(project.path);
-    showToast(`Removed: ${project.name}`, 'info');
-    await loadWorkspaces();
+    showProjectOptionsMenu(project, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
   });
 
   // Worktree items → open terminal or switch to worktree context

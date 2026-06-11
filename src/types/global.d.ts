@@ -47,7 +47,6 @@ declare global {
       onPtyExit: (callback: (payload: { id: string; exitCode: number }) => void) => () => void;
       getSettings: () => Promise<{ worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }>;
       updateSettings: (settings: { worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }) => Promise<{ worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }>;
-      getWorkspaces: () => Promise<any[]>;
       gitPull: (path: string) => Promise<any>;
       gitFetch: (path: string) => Promise<any>;
       addWorktree: (opts: any) => Promise<any>;

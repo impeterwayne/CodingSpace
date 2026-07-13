@@ -18,7 +18,6 @@ const {
 
 const { initializeRendererLifecycle } = require('./lifecycle');
 const { openCreateBranchModal } = require('./modals/createBranchModal');
-const { openSettingsModal } = require('./modals/settingsModal');
 const { openAddWorktreeModal, openAddSubWorktreeModal, openMergeWorktreeModal, openForceRemoveWorktreeModal } = require('./modals/worktreeModals');
 const { createModalHelpers } = require('./ui/modalHelpers');
 const { createModalPrimitives } = require('./ui/modalPrimitives');
@@ -69,7 +68,7 @@ const WT_THEME = {
 // ── State ──────────────────────────────────────────────
 const state: {
   projects: any[];
-  settings: { worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> };
+  settings: { subworktreeBranchParents?: Record<string, string> };
   useExternalWt: boolean;
   workspaceSidebarCollapsed: boolean;
   tabSidebarCollapsed: boolean;
@@ -82,10 +81,10 @@ const state: {
   prewarm: { opencode: any; gemini: any };
   prewarmInProgress: { opencode: boolean; gemini: boolean };
   prewarmSuspendedWorktrees: Set<string>;
+  selectedProjectPath: string | null;
 } = {
   projects: [],
   settings: {
-    worktreeBasePath: '',
     subworktreeBranchParents: {},
   },
   useExternalWt: false,
@@ -107,6 +106,7 @@ const state: {
     gemini: false,
   },
   prewarmSuspendedWorktrees: new Set(),
+  selectedProjectPath: null,
 };
 
 // ── DOM Refs ───────────────────────────────────────────
@@ -116,6 +116,8 @@ const dom = {
   btnMaximize: $('#btn-maximize'),
   btnClose: $('#btn-close'),
   btnSettings: $('#btn-settings'),
+  settingsScreen: $('#settings-screen'),
+  btnCloseSettings: $('#btn-close-settings'),
   btnAddProject: $('#btn-add-project'),
   btnAddFirst: $('#btn-add-first'),
   btnRefreshAll: $('#btn-refresh-all'),
@@ -130,6 +132,7 @@ const dom = {
   modalBody: $('#modal-body'),
   modalFooter: $('#modal-footer'),
   modalCloseBtn: $('#modal-close-btn'),
+  terminalArea: $('#terminal-area'),
   terminalWelcome: $('#terminal-welcome'),
   terminalContainer: $('#terminal-container'),
   terminalTabs: $('#terminal-tabs'),
@@ -146,6 +149,14 @@ const dom = {
   sidebar: $('#sidebar'),
   workspaceSidebar: $('#workspace-sidebar'),
   tabResizeHandle: $('#tab-resize-handle'),
+  settingsAntigravityPath: $('#settings-antigravity-path'),
+  settingsAntigravityAgentPath: $('#settings-antigravity-agent-path'),
+  settingsAndroidStudioPath: $('#settings-android-studio-path'),
+  settingsVsCodePath: $('#settings-vscode-path'),
+  btnBrowseAntigravity: $('#btn-browse-antigravity'),
+  btnBrowseAntigravityAgent: $('#btn-browse-antigravity-agent'),
+  btnBrowseAndroidStudio: $('#btn-browse-android-studio'),
+  btnBrowseVsCode: $('#btn-browse-vscode'),
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
@@ -165,7 +176,38 @@ dom.btnToggleWorkspaceSidebar.addEventListener('click', () => {
   setWorkspaceSidebarCollapsed(!state.workspaceSidebarCollapsed);
 });
 
-dom.btnSettings.addEventListener('click', showSettingsModal);
+dom.btnSettings.addEventListener('click', showSettingsScreen);
+dom.btnCloseSettings.addEventListener('click', hideSettingsScreen);
+
+// ── Integrations Settings Actions ─────────────────────
+function setupBrowseButton(btn, input) {
+  if (!btn || !input) return;
+  btn.addEventListener('click', async () => {
+    const path = await window.api.selectExecutable();
+    if (path) {
+      input.value = path;
+      await saveSettingsFromUI();
+    }
+  });
+}
+
+setupBrowseButton(dom.btnBrowseAntigravity, dom.settingsAntigravityPath);
+setupBrowseButton(dom.btnBrowseAntigravityAgent, dom.settingsAntigravityAgentPath);
+setupBrowseButton(dom.btnBrowseAndroidStudio, dom.settingsAndroidStudioPath);
+setupBrowseButton(dom.btnBrowseVsCode, dom.settingsVsCodePath);
+
+const settingsInputs = [
+  dom.settingsAntigravityPath,
+  dom.settingsAntigravityAgentPath,
+  dom.settingsAndroidStudioPath,
+  dom.settingsVsCodePath,
+];
+for (const input of settingsInputs) {
+  if (input) {
+    input.addEventListener('change', saveSettingsFromUI);
+    input.addEventListener('blur', saveSettingsFromUI);
+  }
+}
 
 // ── Add Project ────────────────────────────────────────
 dom.btnAddProject.addEventListener('click', addProject);
@@ -270,9 +312,32 @@ function loadIcon(name) {
   }
 }
 
-/** Inject width/height into an SVG string for inline use */
+let svgIdCounter = 0;
 function iconSvg(rawSvg, size = 12) {
-  return rawSvg.replace(/^<svg/, `<svg width="${size}" height="${size}"`);
+  svgIdCounter++;
+  const suffix = `_dyn_${svgIdCounter}`;
+  
+  // Find all id="..." declarations
+  const idRegex = /id="([^"]+)"/g;
+  const ids = [];
+  let match;
+  while ((match = idRegex.exec(rawSvg)) !== null) {
+    ids.push(match[1]);
+  }
+  
+  let processed = rawSvg;
+  // Replace each ID and its url(#id) references
+  for (const id of ids) {
+    const newId = `${id}${suffix}`;
+    // Replace id="id" with id="id_dyn_X"
+    processed = processed.replace(new RegExp(`id="${id}"`, 'g'), `id="${newId}"`);
+    // Replace url(#id) with url(#id_dyn_X)
+    processed = processed.replace(new RegExp(`url\\(#${id}\\)`, 'g'), `url(#${newId})`);
+    // Replace url("#id") with url("#id_dyn_X")
+    processed = processed.replace(new RegExp(`url\\("#${id}"\\)`, 'g'), `url(#${newId})`);
+  }
+  
+  return processed.replace(/^<svg/, `<svg width="${size}" height="${size}"`);
 }
 
 // Load all SVG icons once at startup
@@ -1099,6 +1164,11 @@ function insertTab(id, name) {
 
 /** Switch the active worktree context (swap tab bar + restore last active terminal) */
 function switchWorktreeContext(wtPath) {
+  // Exit settings if active
+  dom.settingsScreen.classList.add('hidden');
+  dom.terminalArea.classList.remove('hidden');
+  dom.workspaceSidebar.classList.remove('hidden');
+
   if (state.activeWorktreePath === wtPath) return;
 
   // Save current active terminal for the old worktree
@@ -1107,6 +1177,14 @@ function switchWorktreeContext(wtPath) {
   }
 
   state.activeWorktreePath = wtPath;
+
+  // Set selected project based on active worktree path
+  const project = state.projects?.find((p) => (p.worktrees || []).some((wt) => wt.path === wtPath));
+  if (project && state.selectedProjectPath !== project.path) {
+    state.selectedProjectPath = project.path;
+    renderSidebar(); // Redraw sidebar to show the selected project
+  }
+
   rebuildTabsForWorktree(wtPath);
 
   // Restore last active terminal for this worktree, or pick first
@@ -1136,6 +1214,11 @@ function switchWorktreeContext(wtPath) {
 }
 
 function switchToTerminal(id) {
+  // Exit settings if active
+  dom.settingsScreen.classList.add('hidden');
+  dom.terminalArea.classList.remove('hidden');
+  dom.workspaceSidebar.classList.remove('hidden');
+
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
 
@@ -1145,6 +1228,13 @@ function switchToTerminal(id) {
   if (termInfo.worktreePath !== state.activeWorktreePath) {
     state.activeWorktreePath = termInfo.worktreePath;
     rebuildTabsForWorktree(termInfo.worktreePath);
+
+    // Set selected project based on active worktree path
+    const project = state.projects?.find((p) => (p.worktrees || []).some((wt) => wt.path === termInfo.worktreePath));
+    if (project && state.selectedProjectPath !== project.path) {
+      state.selectedProjectPath = project.path;
+      renderSidebar(); // Redraw sidebar to show the selected project
+    }
   }
 
   // Remember this as the last active terminal for its worktree
@@ -1437,7 +1527,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
   hideProjectOptionsMenu();
   hideTabDropdown();
-  const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt, state.settings);
+  const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt);
   const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
   const menu = showPositionedMenu({
@@ -1548,14 +1638,16 @@ bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAn
 async function loadWorkspaces() {
   if (!state.projects || state.projects.length === 0) {
     dom.projectsContainer.innerHTML = '';
+    dom.projectsContainer.style.display = 'none';
     dom.emptyState.style.display = 'none';
     dom.loadingState.style.display = '';
   }
 
-  state.settings = (await window.api.getSettings()) || { worktreeBasePath: '' };
+  state.settings = (await window.api.getSettings()) || {};
   state.projects = (await window.api.getWorkspaces()) || [];
   
   dom.loadingState.style.display = 'none';
+  dom.projectsContainer.style.display = '';
 
   if (state.expandedProjects.size === 0) {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
@@ -1564,7 +1656,7 @@ async function loadWorkspaces() {
 }
 
 function getWorktreeDisplayMeta(project, wt) {
-  const location = getDomainClassifyWorktreeLocation(project, wt, state.settings);
+  const location = getDomainClassifyWorktreeLocation(project, wt);
 
   switch (location) {
     case 'root':
@@ -1581,16 +1673,68 @@ function getWorktreeDisplayMeta(project, wt) {
 function renderSidebar() {
   if (!state.projects.length) {
     dom.projectsContainer.innerHTML = '';
+    dom.projectsContainer.style.display = 'none';
     dom.emptyState.style.display = '';
     return;
   }
   dom.emptyState.style.display = 'none';
-  dom.projectsContainer.innerHTML = state.projects
-    .map((p, i) => sidebarProjectHTML(p, i)).join('');
-  state.projects.forEach((project) => {
-    attachSidebarProjectEvents(project);
-    (project.worktrees || []).forEach((wt) => loadGitInfo(wt));
+  dom.projectsContainer.style.display = '';
+
+  // Ensure a project is selected
+  if (state.projects.length > 0 && (!state.selectedProjectPath || !state.projects.some(p => p.path === state.selectedProjectPath))) {
+    const activeProject = state.projects.find((p) =>
+      (p.worktrees || []).some((wt) => wt.path === state.activeWorktreePath)
+    );
+    state.selectedProjectPath = activeProject ? activeProject.path : state.projects[0].path;
+  }
+
+  const selectedProject = state.projects.find(p => p.path === state.selectedProjectPath) || state.projects[0];
+
+  // Render left navigation column
+  const navHtml = state.projects.map((project) => {
+    const isSelected = project.path === state.selectedProjectPath;
+    return `
+      <div class="project-nav-item ${isSelected ? 'selected' : ''}" data-project-path="${esc(project.path)}" title="${esc(project.name)}">
+        <div class="sidebar-project-icon">${esc(getWorkspaceInitials(project.name))}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Render right details column
+  const detailHtml = selectedProject ? sidebarSelectedProjectHTML(selectedProject) : '';
+
+  dom.projectsContainer.innerHTML = `
+    <div class="projects-nav-col">
+      ${navHtml}
+    </div>
+    <div class="projects-detail-col">
+      ${detailHtml}
+    </div>
+  `;
+
+  // Attach event listeners
+  // 1. Navigation items
+  dom.projectsContainer.querySelectorAll('.project-nav-item').forEach((navEl) => {
+    if (navEl instanceof HTMLElement) {
+      navEl.addEventListener('click', () => {
+        state.selectedProjectPath = navEl.dataset.projectPath || null;
+        renderSidebar();
+      });
+      navEl.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const p = state.projects.find(proj => proj.path === navEl.dataset.projectPath);
+        if (p) showProjectOptionsMenu(p, e.clientX, e.clientY);
+      });
+    }
   });
+
+  // 2. Project details events
+  if (selectedProject) {
+    attachSelectedProjectEvents(selectedProject);
+    (selectedProject.worktrees || []).forEach((wt) => loadGitInfo(wt));
+  }
+  
   updateSidebarActiveState();
 }
 
@@ -1604,7 +1748,7 @@ function getWorkspaceInitials(name: string) {
   return name.substring(0, 2);
 }
 
-function sidebarProjectHTML(project, index) {
+function sidebarSelectedProjectHTML(project) {
   const expanded = state.expandedProjects.has(project.path);
   const wtItems = getDomainBuildWorktreeTree(project, state.settings)
     .map((node) => sidebarWtItemHTML(project, node)).join('');
@@ -1616,21 +1760,18 @@ function sidebarProjectHTML(project, index) {
   });
 
   return `
-    <div class="sidebar-project" data-project="${esc(project.path)}" style="animation-delay:${index * 0.04}s">
-      <div class="sidebar-project-header" data-action="toggle-project" data-path="${esc(project.path)}">
-        <div class="sidebar-project-left">
-          <span class="sidebar-project-chevron ${expanded ? 'expanded' : ''}">${icons.chevron}</span>
-          <div class="sidebar-project-icon">${esc(getWorkspaceInitials(project.name))}</div>
-          <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
-        </div>
-        <div class="sidebar-project-actions">
-          ${optionsButton}
-        </div>
+    <div class="sidebar-project-header" data-action="toggle-project" data-path="${esc(project.path)}">
+      <div class="sidebar-project-left">
+        <span class="sidebar-project-chevron ${expanded ? 'expanded' : ''}">${icons.chevron}</span>
+        <span class="sidebar-project-name" title="${esc(project.path)}">${esc(project.name)}</span>
       </div>
-      <div class="sidebar-wt-list ${expanded ? '' : 'collapsed'}" data-wt-list="${esc(project.path)}"
-           style="${expanded ? '' : 'max-height:0'}">
-        ${wtItems || sidebarEmptyStateHTML()}
+      <div class="sidebar-project-actions">
+        ${optionsButton}
       </div>
+    </div>
+    <div class="sidebar-wt-list ${expanded ? '' : 'collapsed'}" data-wt-list="${esc(project.path)}"
+         style="${expanded ? '' : 'max-height:0'}">
+      ${wtItems || sidebarEmptyStateHTML()}
     </div>
   `;
 }
@@ -1663,27 +1804,27 @@ function updateSidebarActiveState() {
   });
 }
 
-function attachSidebarProjectEvents(project) {
-  const el = document.querySelector(`.sidebar-project[data-project="${CSS.escape(project.path)}"]`);
-  if (!el) return;
+function attachSelectedProjectEvents(project) {
+  const container = dom.projectsContainer.querySelector('.projects-detail-col');
+  if (!container) return;
 
-  // Toggle
-  const header = el.querySelector('[data-action="toggle-project"]');
+  // Toggle project header
+  const header = container.querySelector('[data-action="toggle-project"]');
   if (header instanceof HTMLElement) {
     header.addEventListener('click', (e) => {
       const target = e.target;
       if (target instanceof Element && target.closest('.sidebar-project-actions')) return;
       const p = header.dataset.path;
       const chevron = header.querySelector('.sidebar-project-chevron');
-      const wtList = el.querySelector(`[data-wt-list="${CSS.escape(p)}"]`);
+      const wtList = container.querySelector(`[data-wt-list="${CSS.escape(p || '')}"]`);
       if (chevron instanceof HTMLElement && wtList instanceof HTMLElement) {
-        if (state.expandedProjects.has(p)) {
-          state.expandedProjects.delete(p);
+        if (state.expandedProjects.has(p || '')) {
+          state.expandedProjects.delete(p || '');
           chevron.classList.remove('expanded');
           wtList.classList.add('collapsed');
           wtList.style.maxHeight = '0';
         } else {
-          state.expandedProjects.add(p);
+          state.expandedProjects.add(p || '');
           chevron.classList.add('expanded');
           wtList.classList.remove('collapsed');
           wtList.style.maxHeight = `${wtList.scrollHeight}px`;
@@ -1698,13 +1839,14 @@ function attachSidebarProjectEvents(project) {
     });
   }
 
-  el.querySelector('[data-action="project-options"]')?.addEventListener('click', (e) => {
+  // Options button
+  container.querySelector('[data-action="project-options"]')?.addEventListener('click', (e) => {
     e.stopPropagation();
     showProjectOptionsMenu(project, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
   });
 
   // Worktree items → open terminal or switch to worktree context
-  el.querySelectorAll('.sidebar-wt-item').forEach((wtEl) => {
+  container.querySelectorAll('.sidebar-wt-item').forEach((wtEl) => {
     if (!(wtEl instanceof HTMLElement)) return;
     wtEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -1717,21 +1859,16 @@ function attachSidebarProjectEvents(project) {
     wtEl.addEventListener('click', async (e) => {
       const target = e.target;
       if (target instanceof Element && target.closest('.sidebar-wt-actions')) return;
-      const wtPath = wtEl.dataset.wtPath;
-      const wtName = wtEl.dataset.wtName;
+      const wtPath = wtEl.dataset.wtPath || '';
+      const wtName = wtEl.dataset.wtName || '';
 
-      // Switch to this worktree's tab context
       const wtTerminals = getTerminalsForWorktree(wtPath);
       if (wtTerminals.length > 0) {
-        // Worktree already has terminals — switch context to show them
         switchWorktreeContext(wtPath);
       } else {
-        // No terminals yet — create the first one for this worktree
         await createTerminal(wtPath, wtName, {
           worktreePath: wtPath,
         });
-        // Start prewarming tool sessions for this worktree immediately in the background.
-        // The visible default tab remains a normal terminal.
         prewarmAllTools();
       }
     });
@@ -1936,20 +2073,36 @@ async function showCreateBranchModal(project) {
   });
 }
 
-async function showSettingsModal() {
-  return openSettingsModal({
-    dom,
-    state,
-    icons,
-    configureModalFooter,
-    showModal,
-    focusModalInputLater,
-    hideModal,
-    withAsyncButtonState,
-    showToast,
-    bindModalEnterSubmit,
-    api: window.api,
-  });
+async function saveSettingsFromUI() {
+  const nextSettings = {
+    ...state.settings,
+    antigravityPath: dom.settingsAntigravityPath ? dom.settingsAntigravityPath.value.trim() : '',
+    antigravityAgentPath: dom.settingsAntigravityAgentPath ? dom.settingsAntigravityAgentPath.value.trim() : '',
+    androidStudioPath: dom.settingsAndroidStudioPath ? dom.settingsAndroidStudioPath.value.trim() : '',
+    vscodePath: dom.settingsVsCodePath ? dom.settingsVsCodePath.value.trim() : '',
+  };
+  state.settings = await window.api.updateSettings(nextSettings);
+}
+
+function showSettingsScreen() {
+  if (state.settings) {
+    if (dom.settingsAntigravityPath) dom.settingsAntigravityPath.value = state.settings.antigravityPath || '';
+    if (dom.settingsAntigravityAgentPath) dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || '';
+    if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || '';
+    if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || '';
+  }
+
+  dom.terminalArea.classList.add('hidden');
+  dom.workspaceSidebar.classList.add('hidden');
+  dom.settingsScreen.classList.remove('hidden');
+}
+
+async function hideSettingsScreen() {
+  await saveSettingsFromUI();
+  dom.settingsScreen.classList.add('hidden');
+  dom.terminalArea.classList.remove('hidden');
+  dom.workspaceSidebar.classList.remove('hidden');
+  fitActiveTerminal();
 }
 
 // ── Add Worktree Modal ─────────────────────────────────
@@ -1978,10 +2131,10 @@ async function showAddSubWorktreeModal(project, sourceWorktree) {
     dom,
     state,
     api: window.api,
-    canCreateNestedWorktree: (projectArg, wtArg) => getDomainCanCreateNestedWorktree(projectArg, wtArg, state.settings),
+    canCreateNestedWorktree: (projectArg, wtArg) => getDomainCanCreateNestedWorktree(projectArg, wtArg),
     showToast,
     getAvailableWorktreeBranches,
-    getWorktreeBasePath: (projectArg) => getDomainWorktreeBasePath(projectArg, state.settings),
+    getWorktreeBasePath: (projectArg) => getDomainWorktreeBasePath(projectArg),
     esc,
     branchComboHTML,
     setupBranchCombo,

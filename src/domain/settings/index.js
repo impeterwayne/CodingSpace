@@ -5,14 +5,15 @@ function normalizeSettings(settings) {
     : {};
 
   return {
-    worktreeBasePath: typeof nextSettings.worktreeBasePath === 'string'
-      ? nextSettings.worktreeBasePath.trim()
-      : '',
     subworktreeBranchParents: Object.fromEntries(
       Object.entries(nextBranchParents)
         .filter(([branch, parent]) => typeof branch === 'string' && branch.trim() && typeof parent === 'string' && parent.trim())
         .map(([branch, parent]) => [branch.trim(), String(parent).trim()])
     ),
+    vscodePath: typeof nextSettings.vscodePath === 'string' ? nextSettings.vscodePath.trim() : '',
+    androidStudioPath: typeof nextSettings.androidStudioPath === 'string' ? nextSettings.androidStudioPath.trim() : '',
+    antigravityPath: typeof nextSettings.antigravityPath === 'string' ? nextSettings.antigravityPath.trim() : '',
+    antigravityAgentPath: typeof nextSettings.antigravityAgentPath === 'string' ? nextSettings.antigravityAgentPath.trim() : '',
   };
 }
 

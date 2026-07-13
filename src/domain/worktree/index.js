@@ -5,22 +5,21 @@ function normalizePathForComparison(inputPath) {
     .toLowerCase();
 }
 
-function getWorktreeBasePath(project, settings) {
-  const configuredBasePath = settings?.worktreeBasePath?.trim();
-  return configuredBasePath || `${project.path}.subworktree`;
+function getWorktreeBasePath(project) {
+  return `${project.path}.subworktree`;
 }
 
 function getOfficialWorktreeBasePath(project) {
   return `${project.path}.worktrees`;
 }
 
-function classifyWorktreeLocation(project, wt, settings) {
+function classifyWorktreeLocation(project, wt) {
   if (!project || !wt?.path) return 'subworktree';
 
   const projectPath = normalizePathForComparison(project.path);
   const worktreePath = normalizePathForComparison(wt.path);
   const officialBasePath = normalizePathForComparison(getOfficialWorktreeBasePath(project));
-  const nestedBasePath = normalizePathForComparison(getWorktreeBasePath(project, settings));
+  const nestedBasePath = normalizePathForComparison(getWorktreeBasePath(project));
 
   if (worktreePath === projectPath) return 'root';
   if (worktreePath === officialBasePath || worktreePath.startsWith(`${officialBasePath}\\`)) return 'official';
@@ -28,12 +27,12 @@ function classifyWorktreeLocation(project, wt, settings) {
   return 'subworktree';
 }
 
-function canCreateNestedWorktree(project, wt, settings) {
-  return classifyWorktreeLocation(project, wt, settings) !== 'root';
+function canCreateNestedWorktree(project, wt) {
+  return classifyWorktreeLocation(project, wt) !== 'root';
 }
 
 function getWorktreeDisplayMeta(project, wt, settings) {
-  const location = classifyWorktreeLocation(project, wt, settings);
+  const location = classifyWorktreeLocation(project, wt);
 
   switch (location) {
     case 'root':
@@ -48,7 +47,7 @@ function getWorktreeDisplayMeta(project, wt, settings) {
 }
 
 function getNestedWorktreeParentPath(project, wt, settings) {
-  if (classifyWorktreeLocation(project, wt, settings) !== 'subworktree') return null;
+  if (classifyWorktreeLocation(project, wt) !== 'subworktree') return null;
   if (!wt.branch) return null;
 
   const parentBranch = settings?.subworktreeBranchParents?.[wt.branch];
@@ -56,7 +55,7 @@ function getNestedWorktreeParentPath(project, wt, settings) {
 
   const parent = (project.worktrees || []).find((candidate) => {
     if (!candidate?.branch) return false;
-    return candidate.branch === parentBranch && classifyWorktreeLocation(project, candidate, settings) !== 'subworktree';
+    return candidate.branch === parentBranch && classifyWorktreeLocation(project, candidate) !== 'subworktree';
   });
 
   return parent?.path || null;

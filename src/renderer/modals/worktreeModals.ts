@@ -70,7 +70,7 @@ async function openAddSubWorktreeModal({ project, sourceWorktree, dom, state, ap
       <label class="form-label">Worktree Path</label>
       <input class="form-input" id="sub-wt-path-input" />
     </div>
-    <p class="form-hint">This creates a normal worktree from <strong>${esc(sourceWorktree.name)}</strong> and stores it under <code>projectname.subworktree</code> unless you changed the setting.</p>
+    <p class="form-hint">This creates a normal worktree from <strong>${esc(sourceWorktree.name)}</strong> and stores it under <code>projectname.subworktree</code>.</p>
   `;
 
   const pathInput = dom.modalBody.querySelector('#sub-wt-path-input');

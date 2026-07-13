@@ -383,7 +383,19 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-in-editor', (_, dirPath) => {
     try {
-      spawn('code', [dirPath], { shell: true, detached: true, stdio: 'ignore' });
+      const settings = workspaceService.getSettings();
+      const exe = settings.vscodePath || 'code';
+      const ext = path.extname(exe).toLowerCase();
+      let spawnFile;
+      let spawnArgs;
+      if (ext === '.cmd' || ext === '.bat') {
+        spawnFile = 'cmd.exe';
+        spawnArgs = ['/d', '/c', exe, dirPath];
+      } else {
+        spawnFile = exe;
+        spawnArgs = [dirPath];
+      }
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -399,8 +411,19 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-in-android-studio', (_, dirPath) => {
     try {
-      // Run `studio64 .` with cwd set to the project directory
-      spawn('studio64', ['.'], { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
+      const settings = workspaceService.getSettings();
+      const exe = settings.androidStudioPath || 'studio64';
+      const ext = path.extname(exe).toLowerCase();
+      let spawnFile;
+      let spawnArgs;
+      if (ext === '.cmd' || ext === '.bat') {
+        spawnFile = 'cmd.exe';
+        spawnArgs = ['/d', '/c', exe, '.'];
+      } else {
+        spawnFile = exe;
+        spawnArgs = ['.'];
+      }
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -447,7 +470,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-in-antigravity', (_, dirPath) => {
     try {
-      const exe = findAntigravityExecutable();
+      const settings = workspaceService.getSettings();
+      const exe = settings.antigravityPath || findAntigravityExecutable();
       const ext = path.extname(exe).toLowerCase();
       
       let spawnFile;
@@ -471,7 +495,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-in-antigravity-agent', (_, dirPath) => {
     try {
-      const exe = findAntigravityAgentExecutable();
+      const settings = workspaceService.getSettings();
+      const exe = settings.antigravityAgentPath || findAntigravityAgentExecutable();
       const ext = path.extname(exe).toLowerCase();
       
       let spawnFile;
@@ -486,7 +511,8 @@ app.whenReady().then(() => {
       }
 
       // Launch Antigravity Agent Manager independently
-      spawn(spawnFile, spawnArgs, { cwd: path.dirname(exe), shell: false, detached: true, stdio: 'ignore' });
+      const cwd = path.isAbsolute(exe) ? path.dirname(exe) : undefined;
+      spawn(spawnFile, spawnArgs, { cwd, shell: false, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

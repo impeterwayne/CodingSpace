@@ -56,7 +56,7 @@
       <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
 
       <div id="sidebar-scroll">
-        <div id="projects-container"></div>
+        <div id="projects-container" style="display:none;"></div>
         <div id="loading-state" class="sidebar-empty">
           <div class="spinner" style="width: 24px; height: 24px; border-width: 3px; margin-bottom: 8px;"></div>
           <p>Loading projects...</p>
@@ -102,6 +102,135 @@
             <img src="icons/terminal.svg" width="48" height="48" alt="" />
           </div>
           <h2>Coding Space</h2>
+
+        </div>
+      </div>
+    </main>
+
+    <!-- ═══ Center — Settings Screen (Stub) ═══ -->
+    <main id="settings-screen" class="hidden">
+      <div class="settings-container">
+        <header class="settings-header">
+          <div class="settings-title-group">
+            <h2 class="settings-title">Settings</h2>
+            <p class="settings-subtitle">Manage preferences and customize your Coding Space environment.</p>
+          </div>
+          <button type="button" class="btn-close-settings" id="btn-close-settings" title="Close settings" aria-label="Close settings">
+            <img src="icons/close.svg" width="16" height="16" alt="" />
+          </button>
+        </header>
+
+        <div class="settings-grid">
+          <!-- General Settings Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">
+                <img src="icons/settings.svg" width="16" height="16" alt="" />
+              </div>
+              <h3 class="settings-card-title">General Preferences</h3>
+            </div>
+            <div class="settings-card-body">
+              <div class="form-group-row">
+                <label class="form-label">Theme Mode</label>
+                <div class="segmented-control">
+                  <button type="button" class="segmented-btn active">Dark</button>
+                  <button type="button" class="segmented-btn" disabled>Light (Soon)</button>
+                  <button type="button" class="segmented-btn" disabled>Contrast</button>
+                </div>
+              </div>
+              
+              <div class="form-group-row">
+                <label class="form-label">Workspace Autosave</label>
+                <label class="switch-toggle">
+                  <input type="checkbox" checked disabled />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <div class="form-group-row">
+                <label class="form-label">Font Family</label>
+                <select class="settings-select" disabled>
+                  <option>JetBrains Mono (Default)</option>
+                  <option>Fira Code</option>
+                  <option>Cascadia Code</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Git & Worktree Preferences Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">
+                <img src="icons/refresh.svg" width="16" height="16" alt="" />
+              </div>
+              <h3 class="settings-card-title">Git & Worktrees</h3>
+            </div>
+            <div class="settings-card-body">
+              <div class="form-group-col">
+                <label class="form-label">Default Subworktree Suffix</label>
+                <input type="text" class="settings-input" value=".subworktree" readonly disabled />
+                <span class="form-hint">All subworktrees are automatically stored here relative to the root project.</span>
+              </div>
+
+              <div class="form-group-row">
+                <label class="form-label">Prewarm Git Sessions</label>
+                <label class="switch-toggle">
+                  <input type="checkbox" checked disabled />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Integrations Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">
+                <img src="icons/antigravity.svg" width="16" height="16" alt="" />
+              </div>
+              <h3 class="settings-card-title">Integrations</h3>
+            </div>
+            <div class="settings-card-body">
+              <!-- Antigravity IDE -->
+              <div class="form-group-col">
+                <label class="form-label">Antigravity IDE path or command</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-antigravity-path" class="settings-input" placeholder="e.g. C:\Program Files\Antigravity IDE\Antigravity IDE.exe" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-antigravity" title="Browse executable">Browse</button>
+                </div>
+              </div>
+
+              <!-- Antigravity Agent CLI -->
+              <div class="form-group-col">
+                <label class="form-label">Antigravity Agent CLI path or command</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-antigravity-agent-path" class="settings-input" placeholder="e.g. C:\Program Files\antigravity\Antigravity.exe" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-antigravity-agent" title="Browse executable">Browse</button>
+                </div>
+              </div>
+
+              <!-- Android Studio -->
+              <div class="form-group-col">
+                <label class="form-label">Android Studio path or command</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-android-studio-path" class="settings-input" placeholder="e.g. studio64 or path to studio64.exe" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-android-studio" title="Browse executable">Browse</button>
+                </div>
+              </div>
+
+              <!-- VS Code -->
+              <div class="form-group-col">
+                <label class="form-label">VS Code path or command</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-vscode-path" class="settings-input" placeholder="e.g. code or path to Code.exe" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-vscode" title="Browse executable">Browse</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
 
         </div>
       </div>
@@ -180,7 +309,7 @@
   <div id="toast-container"></div>
   <!-- Inline SVG images so currentColor works with CSS -->
   <script>
-    document.querySelectorAll('img[src$=".svg"]').forEach(function(img) {
+    document.querySelectorAll('img[src$=".svg"]').forEach(function(img, index) {
       var xhr = new XMLHttpRequest();
       xhr.open('GET', img.src, false);
       xhr.send();
@@ -189,6 +318,46 @@
         div.innerHTML = xhr.responseText.trim();
         const svg = div.querySelector('svg');
         if (svg) {
+          // Make all IDs within this SVG unique to prevent collisions
+          const suffix = '-' + index;
+          const idMap = {};
+          svg.querySelectorAll('[id]').forEach(function(el) {
+            const oldId = el.getAttribute('id');
+            const newId = oldId + suffix;
+            el.setAttribute('id', newId);
+            idMap[oldId] = newId;
+          });
+          
+          // Recursively update all attributes that reference the old IDs
+          const allElements = svg.querySelectorAll('*');
+          allElements.forEach(function(el) {
+            Array.from(el.attributes).forEach(function(attr) {
+              let val = attr.value;
+              let changed = false;
+              for (const [oldId, newId] of Object.entries(idMap)) {
+                const searchStr = 'url(#' + oldId + ')';
+                const searchStrQuote = 'url("#' + oldId + '")';
+                if (val.includes(searchStr)) {
+                  val = val.split(searchStr).join('url(#' + newId + ')');
+                  changed = true;
+                }
+                if (val.includes(searchStrQuote)) {
+                  val = val.split(searchStrQuote).join('url(#' + newId + ')');
+                  changed = true;
+                }
+                if (attr.name === 'href' || attr.name === 'xlink:href') {
+                  if (val === '#' + oldId) {
+                    val = '#' + newId;
+                    changed = true;
+                  }
+                }
+              }
+              if (changed) {
+                el.setAttribute(attr.name, val);
+              }
+            });
+          });
+
           svg.setAttribute('width', img.getAttribute('width') || '12');
           svg.setAttribute('height', img.getAttribute('height') || '12');
           if (img.id) svg.id = img.id;

@@ -32,7 +32,6 @@ const project = {
 };
 
 const settings = {
-  worktreeBasePath: '',
   subworktreeBranchParents: {
     'feature/nested-a': 'feature/a',
     'feature/nested-b': 'main',
@@ -43,9 +42,8 @@ test('normalizePathForComparison normalizes slashes, trailing separators, and ca
   assert.strictEqual(normalizePathForComparison('C:/Repo\\Path\\'), 'c:\\repo\\path');
 });
 
-test('getWorktreeBasePath uses configured path or default suffix', () => {
-  assert.strictEqual(getWorktreeBasePath(project, { worktreeBasePath: '  D:\\Nested  ' }), 'D:\\Nested');
-  assert.strictEqual(getWorktreeBasePath(project, settings), 'C:\\Repo.subworktree');
+test('getWorktreeBasePath uses default suffix', () => {
+  assert.strictEqual(getWorktreeBasePath(project), 'C:\\Repo.subworktree');
 });
 
 test('getOfficialWorktreeBasePath uses official suffix', () => {
@@ -53,31 +51,31 @@ test('getOfficialWorktreeBasePath uses official suffix', () => {
 });
 
 test('classifyWorktreeLocation matches current path rules', () => {
-  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\Repo' }, settings), 'root');
-  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\repo.worktrees\\x' }, settings), 'official');
-  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\repo.subworktree\\x' }, settings), 'subworktree');
-  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\elsewhere' }, settings), 'subworktree');
-  assert.strictEqual(classifyWorktreeLocation(null, { path: 'C:\\elsewhere' }, settings), 'subworktree');
+  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\Repo' }), 'root');
+  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\repo.worktrees\\x' }), 'official');
+  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\repo.subworktree\\x' }), 'subworktree');
+  assert.strictEqual(classifyWorktreeLocation(project, { path: 'C:\\elsewhere' }), 'subworktree');
+  assert.strictEqual(classifyWorktreeLocation(null, { path: 'C:\\elsewhere' }), 'subworktree');
 });
 
 test('canCreateNestedWorktree blocks root only', () => {
-  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo' }, settings), false);
-  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.worktrees\\feature-a' }, settings), true);
-  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.subworktree\\nested-a' }, settings), true);
+  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo' }), false);
+  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.worktrees\\feature-a' }), true);
+  assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.subworktree\\nested-a' }), true);
 });
 
 test('getWorktreeDisplayMeta returns current badge metadata', () => {
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo' }, settings), {
+  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo' }), {
     location: 'root',
     badge: 'local',
     title: 'Local worktree',
   });
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.worktrees\\feature-a' }, settings), {
+  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.worktrees\\feature-a' }), {
     location: 'official',
     badge: 'official',
     title: 'Official worktree location',
   });
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.subworktree\\nested-a' }, settings), {
+  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.subworktree\\nested-a' }), {
     location: 'subworktree',
     badge: 'sub',
     title: 'Subworktree location',

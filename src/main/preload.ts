@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
+  selectExecutable: () => ipcRenderer.invoke('select-executable'),
   addProject: () => ipcRenderer.invoke('add-project'),
   removeProject: (path) => ipcRenderer.invoke('remove-project', path),
   refreshWorktrees: (path) => ipcRenderer.invoke('refresh-worktrees', path),

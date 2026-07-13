@@ -15,35 +15,47 @@ function test(name, fn) {
 test('normalizeSettings trims values and drops blank entries', () => {
   assert.deepStrictEqual(
     normalizeSettings({
-      worktreeBasePath: '  C:\\Worktrees  ',
       subworktreeBranchParents: {
         ' feature/foo ': ' main ',
         '': 'ignored',
         'child': '   ',
       },
+      vscodePath: '   code  ',
+      androidStudioPath: '  studio64  ',
+      antigravityPath: '  antigravity-ide  ',
+      antigravityAgentPath: '  antigravity  ',
     }),
     {
-      worktreeBasePath: 'C:\\Worktrees',
       subworktreeBranchParents: {
         'feature/foo': 'main',
       },
+      vscodePath: 'code',
+      androidStudioPath: 'studio64',
+      antigravityPath: 'antigravity-ide',
+      antigravityAgentPath: 'antigravity',
     }
   );
 });
 
 test('normalizeSettings falls back for non-object input', () => {
   assert.deepStrictEqual(normalizeSettings(null), {
-    worktreeBasePath: '',
     subworktreeBranchParents: {},
+    vscodePath: '',
+    androidStudioPath: '',
+    antigravityPath: '',
+    antigravityAgentPath: '',
   });
 });
 
 test('normalizeWorkspaceConfig keeps projects array and normalizes settings', () => {
   const projects = [{ path: 'C:\\repo' }];
-  const result = normalizeWorkspaceConfig({ projects, settings: { worktreeBasePath: ' x ' } });
+  const result = normalizeWorkspaceConfig({ projects, settings: {} });
   assert.strictEqual(result.projects, projects);
   assert.deepStrictEqual(result.settings, {
-    worktreeBasePath: 'x',
     subworktreeBranchParents: {},
+    vscodePath: '',
+    androidStudioPath: '',
+    antigravityPath: '',
+    antigravityAgentPath: '',
   });
 });

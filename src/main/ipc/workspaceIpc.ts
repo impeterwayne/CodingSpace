@@ -9,6 +9,18 @@ function registerWorkspaceIpc({ ipcMain, dialog, mainWindow, workspaceService })
   ipcMain.handle('get-workspaces', () => workspaceService.getWorkspaces());
   ipcMain.handle('settings:get', () => workspaceService.getSettings());
   ipcMain.handle('settings:update', (_, nextSettings) => workspaceService.updateSettings(nextSettings));
+  ipcMain.handle('select-executable', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'sh', 'lnk'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      title: 'Select Executable Path',
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
 
   ipcMain.handle('add-project', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

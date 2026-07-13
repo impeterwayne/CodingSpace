@@ -45,8 +45,27 @@ declare global {
       ptyKill: (id: string) => Promise<any>;
       onPtyData: (callback: (payload: { id: string; data: string }) => void) => () => void;
       onPtyExit: (callback: (payload: { id: string; exitCode: number }) => void) => () => void;
-      getSettings: () => Promise<{ worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }>;
-      updateSettings: (settings: { worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }) => Promise<{ worktreeBasePath: string; subworktreeBranchParents?: Record<string, string> }>;
+      getSettings: () => Promise<{
+        subworktreeBranchParents?: Record<string, string>;
+        vscodePath?: string;
+        androidStudioPath?: string;
+        antigravityPath?: string;
+        antigravityAgentPath?: string;
+      }>;
+      updateSettings: (settings: {
+        subworktreeBranchParents?: Record<string, string>;
+        vscodePath?: string;
+        androidStudioPath?: string;
+        antigravityPath?: string;
+        antigravityAgentPath?: string;
+      }) => Promise<{
+        subworktreeBranchParents?: Record<string, string>;
+        vscodePath?: string;
+        androidStudioPath?: string;
+        antigravityPath?: string;
+        antigravityAgentPath?: string;
+      }>;
+      selectExecutable: () => Promise<string | null>;
       gitPull: (path: string) => Promise<any>;
       gitFetch: (path: string) => Promise<any>;
       addWorktree: (opts: any) => Promise<any>;

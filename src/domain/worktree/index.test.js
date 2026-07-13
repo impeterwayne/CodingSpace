@@ -5,7 +5,6 @@ const {
   getOfficialWorktreeBasePath,
   classifyWorktreeLocation,
   canCreateNestedWorktree,
-  getWorktreeDisplayMeta,
   getNestedWorktreeParentPath,
   buildWorktreeTree,
 } = require('./index');
@@ -62,24 +61,6 @@ test('canCreateNestedWorktree blocks root only', () => {
   assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo' }), false);
   assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.worktrees\\feature-a' }), true);
   assert.strictEqual(canCreateNestedWorktree(project, { path: 'C:\\Repo.subworktree\\nested-a' }), true);
-});
-
-test('getWorktreeDisplayMeta returns current badge metadata', () => {
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo' }), {
-    location: 'root',
-    badge: 'local',
-    title: 'Local worktree',
-  });
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.worktrees\\feature-a' }), {
-    location: 'official',
-    badge: 'official',
-    title: 'Official worktree location',
-  });
-  assert.deepStrictEqual(getWorktreeDisplayMeta(project, { path: 'C:\\Repo.subworktree\\nested-a' }), {
-    location: 'subworktree',
-    badge: 'sub',
-    title: 'Subworktree location',
-  });
 });
 
 test('getNestedWorktreeParentPath resolves only subworktrees with mapped non-subworktree parent branch', () => {

@@ -31,21 +31,6 @@ function canCreateNestedWorktree(project, wt) {
   return classifyWorktreeLocation(project, wt) !== 'root';
 }
 
-function getWorktreeDisplayMeta(project, wt, settings) {
-  const location = classifyWorktreeLocation(project, wt);
-
-  switch (location) {
-    case 'root':
-      return { location, badge: 'local', title: 'Local worktree' };
-    case 'official':
-      return { location, badge: 'official', title: 'Official worktree location' };
-    case 'subworktree':
-      return { location, badge: 'sub', title: 'Subworktree location' };
-    default:
-      return { location: 'subworktree', badge: 'sub', title: 'Subworktree location' };
-  }
-}
-
 function getNestedWorktreeParentPath(project, wt, settings) {
   if (classifyWorktreeLocation(project, wt) !== 'subworktree') return null;
   if (!wt.branch) return null;
@@ -89,7 +74,6 @@ module.exports = {
   getOfficialWorktreeBasePath,
   classifyWorktreeLocation,
   canCreateNestedWorktree,
-  getWorktreeDisplayMeta,
   getNestedWorktreeParentPath,
   buildWorktreeTree,
 };

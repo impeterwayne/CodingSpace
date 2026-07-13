@@ -44,7 +44,7 @@
           <button type="button" class="sidebar-icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
             <img src="icons/settings.svg" width="14" height="14" alt="" />
           </button>
-          <button type="button" class="sidebar-icon-btn" id="btn-refresh-all" title="Refresh all">
+          <button type="button" class="sidebar-icon-btn" id="btn-refresh-all" title="Refresh all" style="display: none;">
             <img src="icons/refresh.svg" width="14" height="14" alt="" />
           </button>
           <button type="button" class="sidebar-icon-btn accent" id="btn-add-project" title="Add project">
@@ -138,11 +138,16 @@
               </div>
 
               <div class="form-group-row">
-                <label class="form-label">Prewarm Git Sessions</label>
+                <label class="form-label">Auto Refresh Current Project</label>
                 <label class="switch-toggle">
-                  <input type="checkbox" checked disabled />
+                  <input type="checkbox" id="settings-auto-refresh" />
                   <span class="switch-slider"></span>
                 </label>
+              </div>
+
+              <div class="form-group-row">
+                <label class="form-label">Auto Refresh Interval (seconds)</label>
+                <input type="number" id="settings-auto-refresh-interval" class="settings-input" style="width: 80px; text-align: right;" min="1" step="1" />
               </div>
             </div>
           </div>

@@ -33,6 +33,8 @@ test('normalizeSettings trims values and drops blank entries', () => {
       androidStudioPath: 'studio64',
       antigravityPath: 'antigravity-ide',
       antigravityAgentPath: 'antigravity',
+      autoRefreshCurrentProject: true,
+      autoRefreshInterval: 10,
     }
   );
 });
@@ -44,7 +46,43 @@ test('normalizeSettings falls back for non-object input', () => {
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    autoRefreshCurrentProject: true,
+    autoRefreshInterval: 10,
   });
+});
+
+test('normalizeSettings preserves autoRefreshCurrentProject boolean state', () => {
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshCurrentProject: false }).autoRefreshCurrentProject,
+    false
+  );
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshCurrentProject: true }).autoRefreshCurrentProject,
+    true
+  );
+  assert.strictEqual(
+    normalizeSettings({}).autoRefreshCurrentProject,
+    true
+  );
+});
+
+test('normalizeSettings validates and preserves autoRefreshInterval', () => {
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshInterval: 5 }).autoRefreshInterval,
+    5
+  );
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshInterval: 0 }).autoRefreshInterval,
+    10
+  );
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshInterval: -5 }).autoRefreshInterval,
+    10
+  );
+  assert.strictEqual(
+    normalizeSettings({ autoRefreshInterval: 'not-a-number' }).autoRefreshInterval,
+    10
+  );
 });
 
 test('normalizeWorkspaceConfig keeps projects array and normalizes settings', () => {
@@ -57,5 +95,7 @@ test('normalizeWorkspaceConfig keeps projects array and normalizes settings', ()
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    autoRefreshCurrentProject: true,
+    autoRefreshInterval: 10,
   });
 });

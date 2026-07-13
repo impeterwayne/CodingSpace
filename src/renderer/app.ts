@@ -125,6 +125,8 @@ const dom = {
   btnAddProject: $('#btn-add-project'),
   btnAddFirst: $('#btn-add-first'),
   btnRefreshAll: $('#btn-refresh-all'),
+  settingsAutoRefresh: $('#settings-auto-refresh'),
+  settingsAutoRefreshInterval: $('#settings-auto-refresh-interval'),
   toggleExternalWt: $('#toggle-external-wt'),
   projectsContainer: $('#projects-container'),
   loadingState: $('#loading-state'),
@@ -213,6 +215,26 @@ for (const input of settingsInputs) {
   }
 }
 
+if (dom.settingsAutoRefresh) {
+  dom.settingsAutoRefresh.addEventListener('change', async () => {
+    await saveSettingsFromUI();
+    if (dom.btnRefreshAll) {
+      dom.btnRefreshAll.style.display = dom.settingsAutoRefresh.checked ? 'none' : '';
+    }
+    startAutoRefreshLoop();
+  });
+}
+if (dom.settingsAutoRefreshInterval) {
+  dom.settingsAutoRefreshInterval.addEventListener('change', async () => {
+    await saveSettingsFromUI();
+    startAutoRefreshLoop();
+  });
+  dom.settingsAutoRefreshInterval.addEventListener('input', async () => {
+    await saveSettingsFromUI();
+    startAutoRefreshLoop();
+  });
+}
+
 // ── Add Project ────────────────────────────────────────
 dom.btnAddProject.addEventListener('click', addProject);
 dom.btnAddFirst.addEventListener('click', addProject);
@@ -228,7 +250,7 @@ async function addProject() {
 
 // ── Refresh All ────────────────────────────────────────
 dom.btnRefreshAll.addEventListener('click', async () => {
-  const icon = dom.btnRefreshAll.querySelector('svg');
+  const icon = dom.btnRefreshAll.querySelector('img');
   if (icon) icon.classList.add('spinning');
   showToast('Refreshing...', 'info');
   for (const p of state.projects) await window.api.refreshWorktrees(p.path);
@@ -1665,6 +1687,9 @@ async function loadWorkspaces() {
   }
 
   state.settings = (await window.api.getSettings()) || {};
+  if (dom.btnRefreshAll) {
+    dom.btnRefreshAll.style.display = state.settings.autoRefreshCurrentProject ? 'none' : '';
+  }
   state.projects = (await window.api.getWorkspaces()) || [];
   
   dom.loadingState.style.display = 'none';
@@ -1679,21 +1704,6 @@ async function loadWorkspaces() {
   if (!state.activeWorktreePath && state.projects.length > 0) {
     const targetProjPath = state.selectedProjectPath || state.projects[0].path;
     await openProjectWorkspaceAndTerminal(targetProjPath);
-  }
-}
-
-function getWorktreeDisplayMeta(project, wt) {
-  const location = getDomainClassifyWorktreeLocation(project, wt);
-
-  switch (location) {
-    case 'root':
-      return { location, badge: 'local', title: 'Local worktree' };
-    case 'official':
-      return { location, badge: 'official', title: 'Official worktree location' };
-    case 'subworktree':
-      return { location, badge: 'sub', title: 'Subworktree location' };
-    default:
-      return { location: 'subworktree', badge: 'sub', title: 'Subworktree location' };
   }
 }
 
@@ -1809,14 +1819,13 @@ function sidebarSelectedProjectHTML(project) {
 function sidebarWtItemHTML(project, node, depth = 0) {
   const { wt, children } = node;
   const dotClass = wt.bare ? 'bare' : 'loading';
-  const meta = getWorktreeDisplayMeta(project, wt);
   const childHtml = children.map((child) => sidebarWtItemHTML(project, child, depth + 1)).join('');
   return `
     <div class="sidebar-wt-node depth-${depth}">
       <div class="sidebar-wt-item" data-wt-path="${esc(wt.path)}" data-wt-name="${esc(wt.name)}" data-wt-id="${esc(wt.id)}" data-project-path="${esc(project.path)}" style="margin-left:${depth * 16}px;">
         <span class="sidebar-wt-dot ${dotClass}" id="wt-dot-${esc(wt.id)}"></span>
         <div class="sidebar-wt-info">
-          <div class="sidebar-wt-name">${esc(wt.name)} <span class="worktree-location-badge worktree-location-${meta.location}" title="${esc(meta.title)}">${esc(meta.badge)}</span></div>
+          <div class="sidebar-wt-name">${esc(wt.name)}</div>
           <div class="sidebar-wt-branch">${esc(wt.branch || (wt.detached ? 'HEAD detached' : wt.bare ? 'bare' : '...'))}</div>
         </div>
         <div class="sidebar-wt-actions">
@@ -2111,12 +2120,15 @@ async function saveSettingsFromUI() {
     }
     return trimmed;
   };
+  const intervalVal = parseInt(dom.settingsAutoRefreshInterval ? dom.settingsAutoRefreshInterval.value : '10', 10);
   const nextSettings = {
     ...state.settings,
     antigravityPath: dom.settingsAntigravityPath ? cleanVal(dom.settingsAntigravityPath.value) : '',
     antigravityAgentPath: dom.settingsAntigravityAgentPath ? cleanVal(dom.settingsAntigravityAgentPath.value) : '',
     androidStudioPath: dom.settingsAndroidStudioPath ? cleanVal(dom.settingsAndroidStudioPath.value) : '',
     vscodePath: dom.settingsVsCodePath ? cleanVal(dom.settingsVsCodePath.value) : '',
+    autoRefreshCurrentProject: dom.settingsAutoRefresh ? dom.settingsAutoRefresh.checked : true,
+    autoRefreshInterval: isNaN(intervalVal) || intervalVal < 1 ? 10 : intervalVal,
   };
   state.settings = await window.api.updateSettings(nextSettings);
 }
@@ -2127,6 +2139,8 @@ async function showSettingsScreen() {
     if (dom.settingsAntigravityAgentPath) dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || 'detecting...';
     if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'detecting...';
     if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || 'detecting...';
+    if (dom.settingsAutoRefresh) dom.settingsAutoRefresh.checked = !!state.settings.autoRefreshCurrentProject;
+    if (dom.settingsAutoRefreshInterval) dom.settingsAutoRefreshInterval.value = String(state.settings.autoRefreshInterval || 10);
   }
 
   dom.terminalArea.classList.add('hidden');
@@ -2175,6 +2189,7 @@ async function hideSettingsScreen() {
   dom.terminalArea.classList.remove('hidden');
   dom.workspaceSidebar.classList.remove('hidden');
   fitActiveTerminal();
+  startAutoRefreshLoop();
 }
 
 // ── Add Worktree Modal ─────────────────────────────────
@@ -2269,6 +2284,28 @@ function esc(str) {
   return div.innerHTML;
 }
 
+// ── Auto Refresh ───────────────────────────────────────
+let autoRefreshIntervalId = null;
+
+function startAutoRefreshLoop() {
+  if (autoRefreshIntervalId) {
+    clearInterval(autoRefreshIntervalId);
+    autoRefreshIntervalId = null;
+  }
+  const intervalSeconds = state.settings?.autoRefreshInterval || 10;
+  const intervalMs = intervalSeconds * 1000;
+  autoRefreshIntervalId = setInterval(async () => {
+    if (state.settings?.autoRefreshCurrentProject && state.selectedProjectPath) {
+      try {
+        await window.api.refreshWorktrees(state.selectedProjectPath);
+        await loadWorkspaces();
+      } catch (err) {
+        console.error('Auto refresh failed:', err);
+      }
+    }
+  }, intervalMs);
+}
+
 // ── Initialize ─────────────────────────────────────────
 initializeRendererLifecycle({
   loadWorkspaceSidebarCollapsed,
@@ -2281,3 +2318,5 @@ initializeRendererLifecycle({
   state,
   ptyKill: window.api.ptyKill,
 });
+
+startAutoRefreshLoop();

@@ -51,6 +51,8 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        autoRefreshCurrentProject?: boolean;
+        autoRefreshInterval?: number;
       }>;
       updateSettings: (settings: {
         subworktreeBranchParents?: Record<string, string>;
@@ -58,12 +60,16 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        autoRefreshCurrentProject?: boolean;
+        autoRefreshInterval?: number;
       }) => Promise<{
         subworktreeBranchParents?: Record<string, string>;
         vscodePath?: string;
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        autoRefreshCurrentProject?: boolean;
+        autoRefreshInterval?: number;
       }>;
       selectExecutable: () => Promise<string | null>;
       detectIntegrationPaths: () => Promise<{

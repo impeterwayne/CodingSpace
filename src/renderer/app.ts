@@ -74,6 +74,8 @@ const state: {
     androidStudioPath?: string;
     antigravityPath?: string;
     antigravityAgentPath?: string;
+    autoRefreshCurrentProject?: boolean;
+    autoRefreshInterval?: number;
   };
   useExternalWt: boolean;
   workspaceSidebarCollapsed: boolean;
@@ -385,6 +387,7 @@ const iconRaw = {
   android: loadIcon('android'),
   antigravity: loadIcon('antigravity'),
   'more-vertical': loadIcon('more-vertical'),
+  copy: loadIcon('copy'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -406,6 +409,7 @@ const icons = {
   android: iconSvg(iconRaw.android, 12),
   antigravity: iconSvg(iconRaw.antigravity, 12),
   moreVertical: iconSvg(iconRaw['more-vertical'], 12),
+  copy: iconSvg(iconRaw.copy, 12),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -1428,6 +1432,37 @@ function setWorkspaceSidebarCollapsed(collapsed, { persist = true } = {}) {
 // Resize all terminals on window resize
 window.addEventListener('resize', () => fitActiveTerminal());
 
+// Right click context menu for selection copy
+window.addEventListener('contextmenu', (e) => {
+  let selectedText = '';
+  
+  // 1. Check if the target is within a terminal pane
+  const terminalPane = (e.target as HTMLElement).closest('.terminal-pane');
+  if (terminalPane) {
+    const paneId = terminalPane.id; // e.g. "pane-term-1"
+    const termId = paneId.replace('pane-', '');
+    const termInfo = state.terminals.get(termId);
+    if (termInfo && termInfo.term && termInfo.term.hasSelection()) {
+      selectedText = termInfo.term.getSelection();
+    }
+  }
+  
+  // 2. If no terminal selection, check standard DOM selection
+  if (!selectedText) {
+    const domSelection = window.getSelection() ? window.getSelection().toString() : '';
+    if (domSelection) {
+      selectedText = domSelection;
+    }
+  }
+
+  // 3. If there is selected text, show context menu
+  if (selectedText) {
+    e.preventDefault();
+    e.stopPropagation();
+    showSelectionContextMenu(e.clientX, e.clientY, selectedText);
+  }
+});
+
 // ── Tab Sidebar Collapse Toggle ────────────────────────
 function loadTabSidebarCollapsed() {
   try {
@@ -1528,6 +1563,7 @@ function showTabDropdown() {
   hideTabDropdown();
   hideProjectOptionsMenu();
   hideWorktreeContextMenu();
+  hideSelectionContextMenu();
 
   const dropdown = showPositionedMenu({
     id: 'tab-dropdown',
@@ -1570,6 +1606,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
   hideWorktreeContextMenu();
   hideProjectOptionsMenu();
   hideTabDropdown();
+  hideSelectionContextMenu();
   const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt);
   const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
@@ -1611,6 +1648,7 @@ function showProjectOptionsMenu(project, x, y) {
   hideProjectOptionsMenu();
   hideWorktreeContextMenu();
   hideTabDropdown();
+  hideSelectionContextMenu();
 
   const menu = showPositionedMenu({
     id: 'project-options-menu',
@@ -1654,6 +1692,42 @@ function handleProjectOptionsMenuOutsideClick(e) {
   const menu = document.getElementById('project-options-menu');
   if (menu && !menu.contains(e.target)) {
     hideProjectOptionsMenu();
+  }
+}
+
+function showSelectionContextMenu(x, y, text) {
+  hideWorktreeContextMenu();
+  hideProjectOptionsMenu();
+  hideTabDropdown();
+  hideSelectionContextMenu();
+
+  const menu = showPositionedMenu({
+    id: 'selection-context-menu',
+    className: 'selection-context-menu tab-dropdown',
+    x,
+    y,
+    html: menuItemHTML({ action: 'copy-selection', icon: icons.copy, label: 'Copy' }),
+    outsideClickHandler: handleSelectionContextMenuOutsideClick,
+  });
+
+  bindMenuActions(menu, {
+    'copy-selection': async () => {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard', 'info');
+    }
+  }, hideSelectionContextMenu);
+}
+
+function hideSelectionContextMenu() {
+  const existing = document.getElementById('selection-context-menu');
+  if (existing) existing.remove();
+  document.removeEventListener('click', handleSelectionContextMenuOutsideClick);
+}
+
+function handleSelectionContextMenuOutsideClick(e) {
+  const menu = document.getElementById('selection-context-menu');
+  if (menu && !menu.contains(e.target)) {
+    hideSelectionContextMenu();
   }
 }
 

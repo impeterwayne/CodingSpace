@@ -748,7 +748,6 @@ body {
   color: #6c5ce7;
 }
 .terminal-tab-icon.opencode-icon,
-.terminal-tab-icon.gemini-icon,
 .terminal-tab-icon.claude-icon,
 .terminal-tab-icon.terminal-icon,
 .terminal-tab-icon.windows-terminal-icon,
@@ -1177,7 +1176,6 @@ body {
   flex-shrink: 0;
 }
 .tab-dropdown-icon.opencode-icon,
-.tab-dropdown-icon.gemini-icon,
 .tab-dropdown-icon.claude-icon,
 .tab-dropdown-icon.terminal-icon,
 .tab-dropdown-icon.windows-terminal-icon,
@@ -1197,7 +1195,6 @@ body {
   margin: 4px 8px;
 }
 .tab-dropdown-item:hover .tab-dropdown-icon.opencode-icon,
-.tab-dropdown-item:hover .tab-dropdown-icon.gemini-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.claude-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.terminal-icon,
 .tab-dropdown-item:hover .tab-dropdown-icon.windows-terminal-icon,

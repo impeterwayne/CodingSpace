@@ -68,7 +68,13 @@ const WT_THEME = {
 // ── State ──────────────────────────────────────────────
 const state: {
   projects: any[];
-  settings: { subworktreeBranchParents?: Record<string, string> };
+  settings: {
+    subworktreeBranchParents?: Record<string, string>;
+    vscodePath?: string;
+    androidStudioPath?: string;
+    antigravityPath?: string;
+    antigravityAgentPath?: string;
+  };
   useExternalWt: boolean;
   workspaceSidebarCollapsed: boolean;
   tabSidebarCollapsed: boolean;
@@ -78,8 +84,8 @@ const state: {
   activeWorktreePath: string | null;
   worktreeActiveTerminal: Map<string, string>;
   terminalCounter: number;
-  prewarm: { opencode: any; gemini: any };
-  prewarmInProgress: { opencode: boolean; gemini: boolean };
+  prewarm: { opencode: any };
+  prewarmInProgress: { opencode: boolean };
   prewarmSuspendedWorktrees: Set<string>;
   selectedProjectPath: string | null;
 } = {
@@ -99,11 +105,9 @@ const state: {
   // Prewarmed tool sessions: { id, term, fitAddon, paneEl, cleanup, cwd, worktreePath, ready }
   prewarm: {
     opencode: null,
-    gemini: null,
   },
   prewarmInProgress: {
     opencode: false,
-    gemini: false,
   },
   prewarmSuspendedWorktrees: new Set(),
   selectedProjectPath: null,
@@ -354,7 +358,6 @@ const iconRaw = {
   settings: loadIcon('settings'),
   close: loadIcon('close'),
   opencode: loadIcon('opencode'),
-  gemini: loadIcon('gemini'),
   claude: loadIcon('claude'),
   'windows-terminal': loadIcon('windows-terminal'),
   android: loadIcon('android'),
@@ -376,7 +379,6 @@ const icons = {
   settings: iconSvg(iconRaw.settings, 12),
   close: iconSvg(iconRaw.close, 8),
   opencode: iconSvg(iconRaw.opencode, 12),
-  gemini: iconSvg(iconRaw.gemini, 12),
   claude: iconSvg(iconRaw.claude, 12),
   'windows-terminal': iconSvg(iconRaw['windows-terminal'], 12),
   android: iconSvg(iconRaw.android, 12),
@@ -411,19 +413,7 @@ const TOOL_TABS: Record<string, ToolTab> = {
       forceMouseMode: false,
     },
   },
-  gemini: {
-    key: 'gemini',
-    action: 'new-gemini',
-    command: 'gemini',
-    label: 'Gemini',
-    iconKey: 'gemini',
-    prewarm: false,
-    launchArgs: [],
-    title: 'Open Gemini in a new terminal tab',
-    behavior: {
-      forceMouseMode: false,
-    },
-  },
+
   claudeDangerous: {
     key: 'claudeDangerous',
     action: 'new-claude-dangerous',
@@ -764,7 +754,7 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
 /**
  * Create a terminal that directly spawns a tool command as the PTY process.
  * Unlike createTerminal() which spawns a shell, this makes the tool the direct
- * process — giving it proper terminal allocation (fixes opencode/gemini not
+ * process — giving it proper terminal allocation (fixes opencode not
  * spawning when typed into a shell).
  */
 async function createDirectToolTerminal(cwd, name, options: { command?: string; launchArgs?: string[]; worktreePath?: string; iconKey?: string; behavior?: Partial<TerminalBehavior> } = {}) {
@@ -2114,28 +2104,70 @@ async function showCreateBranchModal(project) {
 }
 
 async function saveSettingsFromUI() {
+  const cleanVal = (val: string) => {
+    const trimmed = val.trim();
+    if (trimmed === 'detecting...' || trimmed === 'not detected') {
+      return '';
+    }
+    return trimmed;
+  };
   const nextSettings = {
     ...state.settings,
-    antigravityPath: dom.settingsAntigravityPath ? dom.settingsAntigravityPath.value.trim() : '',
-    antigravityAgentPath: dom.settingsAntigravityAgentPath ? dom.settingsAntigravityAgentPath.value.trim() : '',
-    androidStudioPath: dom.settingsAndroidStudioPath ? dom.settingsAndroidStudioPath.value.trim() : '',
-    vscodePath: dom.settingsVsCodePath ? dom.settingsVsCodePath.value.trim() : '',
+    antigravityPath: dom.settingsAntigravityPath ? cleanVal(dom.settingsAntigravityPath.value) : '',
+    antigravityAgentPath: dom.settingsAntigravityAgentPath ? cleanVal(dom.settingsAntigravityAgentPath.value) : '',
+    androidStudioPath: dom.settingsAndroidStudioPath ? cleanVal(dom.settingsAndroidStudioPath.value) : '',
+    vscodePath: dom.settingsVsCodePath ? cleanVal(dom.settingsVsCodePath.value) : '',
   };
   state.settings = await window.api.updateSettings(nextSettings);
 }
 
-function showSettingsScreen() {
+async function showSettingsScreen() {
   if (state.settings) {
-    if (dom.settingsAntigravityPath) dom.settingsAntigravityPath.value = state.settings.antigravityPath || '';
-    if (dom.settingsAntigravityAgentPath) dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || '';
-    if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || '';
-    if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || '';
+    if (dom.settingsAntigravityPath) dom.settingsAntigravityPath.value = state.settings.antigravityPath || 'detecting...';
+    if (dom.settingsAntigravityAgentPath) dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || 'detecting...';
+    if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'detecting...';
+    if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || 'detecting...';
   }
 
   dom.terminalArea.classList.add('hidden');
   dom.workspaceSidebar.classList.add('hidden');
   dom.settingsScreen.classList.remove('hidden');
+
+  try {
+    const detected = await window.api.detectIntegrationPaths();
+    if (state.settings) {
+      if (dom.settingsAntigravityPath) {
+        dom.settingsAntigravityPath.value = state.settings.antigravityPath || detected.antigravityPath || 'not detected';
+      }
+      if (dom.settingsAntigravityAgentPath) {
+        dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || detected.antigravityAgentPath || 'not detected';
+      }
+      if (dom.settingsAndroidStudioPath) {
+        dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || detected.androidStudioPath || 'not detected';
+      }
+      if (dom.settingsVsCodePath) {
+        dom.settingsVsCodePath.value = state.settings.vscodePath || detected.vscodePath || 'not detected';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to detect integration paths:', err);
+    if (state.settings) {
+      if (dom.settingsAntigravityPath) {
+        dom.settingsAntigravityPath.value = state.settings.antigravityPath || 'not detected';
+      }
+      if (dom.settingsAntigravityAgentPath) {
+        dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || 'not detected';
+      }
+      if (dom.settingsAndroidStudioPath) {
+        dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'not detected';
+      }
+      if (dom.settingsVsCodePath) {
+        dom.settingsVsCodePath.value = state.settings.vscodePath || 'not detected';
+      }
+    }
+  }
 }
+
 
 async function hideSettingsScreen() {
   await saveSettingsFromUI();

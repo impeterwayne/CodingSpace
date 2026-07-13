@@ -66,6 +66,12 @@ declare global {
         antigravityAgentPath?: string;
       }>;
       selectExecutable: () => Promise<string | null>;
+      detectIntegrationPaths: () => Promise<{
+        antigravityPath: string | null;
+        antigravityAgentPath: string | null;
+        androidStudioPath: string | null;
+        vscodePath: string | null;
+      }>;
       gitPull: (path: string) => Promise<any>;
       gitFetch: (path: string) => Promise<any>;
       addWorktree: (opts: any) => Promise<any>;

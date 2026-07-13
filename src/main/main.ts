@@ -430,6 +430,66 @@ app.whenReady().then(() => {
     }
   });
 
+  function detectPath(command, possiblePaths) {
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+    if (process.platform === 'win32') {
+      try {
+        const output = execFileSync('where.exe', [command], {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        const matches = output.split(/\r?\n/).filter(Boolean);
+        const resolvedPath = matches.find((match) => /\.(cmd|bat)$/i.test(match))
+          || matches.find((match) => /\.exe$/i.test(match))
+          || matches[0];
+        if (resolvedPath && fs.existsSync(resolvedPath)) {
+          return resolvedPath;
+        }
+      } catch (_) {}
+    } else {
+      try {
+        const output = execSync(`which ${command}`, {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        if (output && fs.existsSync(output)) {
+          return output;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  ipcMain.handle('detect-integration-paths', () => {
+    return {
+      antigravityPath: detectPath('antigravity-ide', [
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'bin', 'antigravity-ide.cmd'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity IDE', 'Antigravity IDE.exe'),
+      ]),
+      antigravityAgentPath: detectPath('antigravity', [
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
+      ]),
+      androidStudioPath: detectPath('studio64', [
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+      ]),
+      vscodePath: detectPath('code', [
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft VS Code', 'bin', 'code.cmd'),
+      ]),
+    };
+  });
+
+
   function findAntigravityExecutable() {
     const possiblePaths = [
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),

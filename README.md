@@ -6,7 +6,7 @@
 - **Embedded Terminal** — Built-in `xterm.js` and `node-pty` terminal tabs.
 - **Git Status Dashboard** — See branch, modified files, ahead/behind, and last commit at a glance.
 - **Quick Actions** — Open VS Code, Android Studio, Antigravity, or Windows Explorer with a single click.
-- **Quick Tools** — Launch tools like OpenCode, Gemini, and Claude directly in terminal tabs.
+- **Quick Tools** — Launch tools like OpenCode and Claude directly in terminal tabs.
 - **Persistent Config** — Projects are saved and restored between sessions.
 
 ## Getting Started

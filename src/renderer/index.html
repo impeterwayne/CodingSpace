@@ -121,42 +121,6 @@
         </header>
 
         <div class="settings-grid">
-          <!-- General Settings Card -->
-          <div class="settings-card">
-            <div class="settings-card-header">
-              <div class="settings-card-icon">
-                <img src="icons/settings.svg" width="16" height="16" alt="" />
-              </div>
-              <h3 class="settings-card-title">General Preferences</h3>
-            </div>
-            <div class="settings-card-body">
-              <div class="form-group-row">
-                <label class="form-label">Theme Mode</label>
-                <div class="segmented-control">
-                  <button type="button" class="segmented-btn active">Dark</button>
-                  <button type="button" class="segmented-btn" disabled>Light (Soon)</button>
-                  <button type="button" class="segmented-btn" disabled>Contrast</button>
-                </div>
-              </div>
-              
-              <div class="form-group-row">
-                <label class="form-label">Workspace Autosave</label>
-                <label class="switch-toggle">
-                  <input type="checkbox" checked disabled />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-
-              <div class="form-group-row">
-                <label class="form-label">Font Family</label>
-                <select class="settings-select" disabled>
-                  <option>JetBrains Mono (Default)</option>
-                  <option>Fira Code</option>
-                  <option>Cascadia Code</option>
-                </select>
-              </div>
-            </div>
-          </div>
 
           <!-- Git & Worktree Preferences Card -->
           <div class="settings-card">
@@ -201,9 +165,9 @@
                 </div>
               </div>
 
-              <!-- Antigravity Agent CLI -->
+              <!-- Antigravity Agent Manager -->
               <div class="form-group-col">
-                <label class="form-label">Antigravity Agent CLI path or command</label>
+                <label class="form-label">Antigravity Agent Manager path or command</label>
                 <div class="input-browse-group">
                   <input type="text" id="settings-antigravity-agent-path" class="settings-input" placeholder="e.g. C:\Program Files\antigravity\Antigravity.exe" autocomplete="off" spellcheck="false" />
                   <button type="button" class="btn-browse" id="btn-browse-antigravity-agent" title="Browse executable">Browse</button>

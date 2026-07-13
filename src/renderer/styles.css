@@ -1694,7 +1694,7 @@ body {
   display: none !important;
 }
 
-#settings-screen, #symlink-screen {
+#settings-screen, #symlink-screen, #agent-toolkit-screen {
   flex: 1;
   min-width: 0;
   background: var(--bg-primary);
@@ -2025,7 +2025,8 @@ body {
   cursor: pointer;
   min-width: 0;
 }
-.symlink-checkbox {
+.symlink-checkbox,
+.agent-toolkit-checkbox {
   appearance: none;
   width: 16px;
   height: 16px;
@@ -2039,11 +2040,13 @@ body {
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.symlink-checkbox:checked {
+.symlink-checkbox:checked,
+.agent-toolkit-checkbox:checked {
   background: var(--accent-default);
   border-color: var(--accent-default);
 }
-.symlink-checkbox:checked::after {
+.symlink-checkbox:checked::after,
+.agent-toolkit-checkbox:checked::after {
   content: "";
   width: 4px;
   height: 8px;
@@ -2051,7 +2054,8 @@ body {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg) translate(-0.5px, -0.5px);
 }
-.symlink-checkbox:focus-visible {
+.symlink-checkbox:focus-visible,
+.agent-toolkit-checkbox:focus-visible {
   border-color: var(--accent-default);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }

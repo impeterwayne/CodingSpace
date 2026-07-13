@@ -74,6 +74,8 @@ const state: {
     androidStudioPath?: string;
     antigravityPath?: string;
     antigravityAgentPath?: string;
+    openspecSourcePath?: string;
+    bmadSourcePath?: string;
     autoRefreshCurrentProject?: boolean;
     autoRefreshInterval?: number;
   };
@@ -176,6 +178,12 @@ const dom = {
   btnBrowseSymlinkScreen: $('#btn-browse-symlink-screen'),
   btnAddSymlinkScreenTarget: $('#btn-add-symlink-screen-target'),
   symlinkScreenNameGroup: $('#symlink-screen-name-group'),
+  btnAgentToolkit: $('#btn-agent-toolkit'),
+  agentToolkitScreen: $('#agent-toolkit-screen'),
+  btnCloseAgentToolkitScreen: $('#btn-close-agent-toolkit-screen'),
+  agentToolkitActiveName: $('#agent-toolkit-active-name'),
+  agentToolkitActivePath: $('#agent-toolkit-active-path'),
+  agentToolkitListContainer: $('#agent-toolkit-list-container'),
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
@@ -400,6 +408,7 @@ const iconRaw = {
   'more-vertical': loadIcon('more-vertical'),
   copy: loadIcon('copy'),
   link: loadIcon('link'),
+  'agent-toolkit': loadIcon('agent-toolkit'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -423,6 +432,7 @@ const icons = {
   moreVertical: iconSvg(iconRaw['more-vertical'], 12),
   copy: iconSvg(iconRaw.copy, 12),
   link: iconSvg(iconRaw.link, 12),
+  agentToolkit: iconSvg(iconRaw['agent-toolkit'], 16),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -1195,6 +1205,8 @@ function insertTab(id, name) {
 function switchWorktreeContext(wtPath) {
   // Exit settings if active
   dom.settingsScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
   dom.terminalArea.classList.remove('hidden');
   dom.workspaceSidebar.classList.remove('hidden');
 
@@ -1276,6 +1288,8 @@ async function openProjectWorkspaceAndTerminal(projectPath) {
 function switchToTerminal(id) {
   // Exit settings if active
   dom.settingsScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
   dom.terminalArea.classList.remove('hidden');
   dom.workspaceSidebar.classList.remove('hidden');
 
@@ -2241,6 +2255,7 @@ async function showSettingsScreen() {
   dom.terminalArea.classList.add('hidden');
   dom.workspaceSidebar.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
   dom.settingsScreen.classList.remove('hidden');
 
   try {
@@ -2300,6 +2315,7 @@ async function showSymlinkScreen() {
   dom.workspaceSidebar.classList.add('hidden');
   dom.settingsScreen.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.remove('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
 
   if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = '';
   if (dom.symlinkScreenNewName) dom.symlinkScreenNewName.value = '';
@@ -2479,6 +2495,19 @@ async function renderSymlinkScreenList(symlinkTargets) {
     listContainer.querySelectorAll('.symlink-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         const name = btn.dataset.name;
+        if (activeWorktreePath) {
+          try {
+            showToast(`Removing symlink for ${name}...`, 'info');
+            const res = await window.api.deleteSymlink({ worktreePath: activeWorktreePath, name });
+            if (res && !res.success) {
+              showToast(`Failed to remove link for ${name}: ${res.error}`, 'error');
+            } else {
+              showToast(`Removed link for ${name}!`, 'success');
+            }
+          } catch (err) {
+            console.error('Failed to delete symlink:', err);
+          }
+        }
         const updated = symlinkTargets.filter((t) => t.name !== name);
         state.settings = await window.api.updateSettings({
           ...state.settings,
@@ -2550,12 +2579,38 @@ if (dom.btnAddSymlinkScreenTarget) {
       symlinkTargets: updated,
     });
 
+    const activeWorktreePath = state.activeWorktreePath;
+    let linkSuccess = false;
+    if (activeWorktreePath) {
+      try {
+        showToast(`Creating symlink for ${nameVal}...`, 'info');
+        const res = await window.api.createSymlink({
+          worktreePath: activeWorktreePath,
+          name: nameVal,
+          targetPath: pathVal,
+        });
+        if (res.success) {
+          linkSuccess = true;
+          showToast(`Linked ${nameVal} successfully!`, 'success');
+        } else {
+          showToast(`Link failed: ${res.error}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Link failed: ${err.message}`, 'error');
+      }
+    }
+
     await renderSymlinkScreenList(state.settings.symlinkTargets);
 
     if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = '';
     if (dom.symlinkScreenNewName) dom.symlinkScreenNewName.value = '';
     if (dom.symlinkScreenNameGroup) dom.symlinkScreenNameGroup.classList.add('hidden');
-    showToast(`Added "${nameVal}" to managed symlinks`, 'success');
+    
+    if (linkSuccess) {
+      showToast(`Added and linked "${nameVal}" successfully!`, 'success');
+    } else {
+      showToast(`Added "${nameVal}" to managed symlinks`, 'success');
+    }
   });
 }
 
@@ -2637,6 +2692,637 @@ async function showForceRemoveWorktreeModal(project, wt) {
     icons,
     closeWorktreeOwnedSessions,
     releaseWorktreeOwnedSessions,
+  });
+}
+
+// ── Agent Toolkit Screen ───────────────────────────────────
+async function showAgentToolkitScreen() {
+  const activeWorktreePath = state.activeWorktreePath;
+  const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
+
+  if (dom.agentToolkitActiveName) dom.agentToolkitActiveName.textContent = activeWorktreeName;
+  if (dom.agentToolkitActivePath) dom.agentToolkitActivePath.textContent = activeWorktreePath || 'Please select a worktree first.';
+
+  dom.terminalArea.classList.add('hidden');
+  dom.workspaceSidebar.classList.add('hidden');
+  dom.settingsScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.remove('hidden');
+
+  await refreshAgentToolkitStatus();
+}
+
+function hideAgentToolkitScreen() {
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
+  dom.terminalArea.classList.remove('hidden');
+  dom.workspaceSidebar.classList.remove('hidden');
+  fitActiveTerminal();
+  startAutoRefreshLoop();
+}
+
+// Toolkit components to link/manage
+const TOOLKIT_COMPONENTS = [
+  // --- OpenSpec Group Components ---
+  {
+    id: 'openspec_core',
+    name: 'OpenSpec Core Infrastructure',
+    folderName: 'openspec',
+    description: 'Core OpenSpec configuration and specs folder.',
+    gitExcludePatterns: [] // Do not exclude specs to allow git tracking
+  },
+  {
+    id: 'openspec_claude',
+    name: 'Claude OpenSpec Skills',
+    folderName: '.claude\\skills',
+    description: 'Claude-specific skills and agent instructions.',
+    gitExcludePatterns: ['.claude/skills/openspec-*/']
+  },
+  {
+    id: 'openspec_codex',
+    name: 'Codex OpenSpec Skills',
+    folderName: '.codex\\skills',
+    description: 'Codex-specific skills and custom Codex settings.',
+    gitExcludePatterns: ['.codex/skills/openspec-*/']
+  },
+  {
+    id: 'openspec_opencode',
+    name: 'OpenCode OpenSpec Skills',
+    isMulti: true,
+    folders: [
+      { name: '.opencode\\skills', pattern: '.opencode/skills/' },
+      { name: '.opencode\\commands', pattern: '.opencode/commands/' }
+    ],
+    description: 'OpenCode-specific skills and tools.',
+    gitExcludePatterns: ['.opencode/skills/openspec-*/', '.opencode/commands/openspec-*/']
+  },
+  {
+    id: 'openspec_antigravity',
+    name: 'Antigravity OpenSpec Workflows',
+    isMulti: true,
+    folders: [
+      { name: '.agent\\skills', pattern: '.agent/skills/' },
+      { name: '.agent\\workflows', pattern: '.agent/workflows/' }
+    ],
+    description: 'Deploys OpenSpec shared skills and slash-command workflows.',
+    gitExcludePatterns: ['.agent/skills/openspec-*/', '.agent/workflows/opsx-*']
+  },
+
+  // --- BMAD Group Components ---
+  {
+    id: 'bmad_core',
+    name: 'BMAD Core Engine',
+    folderName: '_bmad',
+    description: 'Core BMAD engine skills and configs. Integrates _bmad-output automatically.',
+    gitExcludePatterns: ['_bmad/', '_bmad-output/']
+  },
+  {
+    id: 'bmad_agent_skills',
+    name: 'BMAD Agent Skills',
+    folderName: '.agents\\skills',
+    description: 'Core BMAD agent skills.',
+    gitExcludePatterns: ['.agents/skills/bmad-*/']
+  },
+  {
+    id: 'bmad_antigravity',
+    name: 'Antigravity CLI configuration',
+    folderName: '.antigravitycli',
+    description: 'Integrates local Antigravity settings and skill definitions.',
+    gitExcludePatterns: ['.antigravitycli/']
+  },
+  {
+    id: 'bmad_claude',
+    name: 'Claude BMAD Skills',
+    folderName: '.claude\\skills',
+    description: 'Claude-specific skills and agent instructions.',
+    gitExcludePatterns: ['.claude/skills/bmad-*/']
+  },
+  {
+    id: 'bmad_codex',
+    name: 'Codex BMAD Skills',
+    folderName: '.codex\\skills',
+    description: 'Codex-specific skills and custom Codex settings.',
+    gitExcludePatterns: ['.codex/skills/bmad-*/']
+  },
+  {
+    id: 'bmad_opencode',
+    name: 'OpenCode BMAD Skills',
+    isMulti: true,
+    folders: [
+      { name: '.opencode\\skills', pattern: '.opencode/skills/' },
+      { name: '.opencode\\commands', pattern: '.opencode/commands/' }
+    ],
+    description: 'OpenCode-specific skills and tools.',
+    gitExcludePatterns: ['.opencode/skills/bmad-*/', '.opencode/commands/bmad-*/']
+  },
+  {
+    id: 'bmad_shared',
+    name: 'Shared Agent Skills & Workflows',
+    isMulti: true,
+    folders: [
+      { name: '.agent\\skills', pattern: '.agent/skills/' },
+      { name: '.agent\\workflows', pattern: '.agent/workflows/' }
+    ],
+    description: 'Shared agent workflow commands and shared custom skills.',
+    gitExcludePatterns: ['.agent/skills/bmad-*/', '.agent/workflows/bmad-*']
+  }
+];
+
+async function refreshAgentToolkitStatus() {
+  const activeWorktreePath = state.activeWorktreePath;
+  const projectPath = state.selectedProjectPath || (state.projects[0] ? state.projects[0].path : null);
+  
+  if (!activeWorktreePath || !projectPath) {
+    if (dom.agentToolkitListContainer) {
+      dom.agentToolkitListContainer.innerHTML = `<div class="symlink-empty-state">No Active Worktree or Project path found.</div>`;
+    }
+    return;
+  }
+
+  const cleanPath = (p) => p.replace(/\//g, '\\');
+  const pPath = cleanPath(projectPath);
+
+  // 1. Determine openspecSourcePath (setting -> embedded defaults -> candidates -> default)
+  const defaultSources = await window.api.getDefaultToolkitSources();
+  let openspecPath = state.settings.openspecSourcePath || '';
+  if (!openspecPath) {
+    if (await window.api.pathExists(defaultSources.openspecPath)) {
+      openspecPath = defaultSources.openspecPath;
+    } else {
+      const openspecCandidates = [
+        pPath + '\\OpenSpec',
+        pPath + '\\openspec',
+        pPath + '\\openspec-source'
+      ];
+      for (const cand of openspecCandidates) {
+        if (await window.api.pathExists(cand)) {
+          openspecPath = cand;
+          break;
+        }
+      }
+    }
+  }
+  if (!openspecPath) {
+    openspecPath = defaultSources.openspecPath;
+  }
+
+  // Determine bmadSourcePath (setting -> embedded defaults -> candidates -> default)
+  let bmadPath = state.settings.bmadSourcePath || '';
+  if (!bmadPath) {
+    if (await window.api.pathExists(defaultSources.bmadPath)) {
+      bmadPath = defaultSources.bmadPath;
+    } else {
+      const bmadCandidates = [
+        pPath + '\\BMAD-METHOD',
+        pPath + '\\bmad-method',
+        pPath + '\\BMAD',
+        pPath + '\\_bmad'
+      ];
+      for (const cand of bmadCandidates) {
+        if (await window.api.pathExists(cand)) {
+          bmadPath = cand;
+          break;
+        }
+      }
+    }
+  }
+  if (!bmadPath) {
+    bmadPath = defaultSources.bmadPath;
+  }
+
+
+  const listContainer = dom.agentToolkitListContainer;
+  if (!listContainer) return;
+
+  const savedScrollTop = listContainer.scrollTop;
+
+  if (!listContainer.innerHTML || listContainer.innerHTML.includes('No Active Worktree') || listContainer.innerHTML.includes('No active project')) {
+    listContainer.innerHTML = `<div style="display:flex; justify-content:center; padding:16px; align-items:center; gap:8px;"><span class="spinner"></span> Checking status...</div>`;
+  }
+
+  try {
+    const OPENSPEC_PLATFORMS = [
+      { id: 'openspec_antigravity', name: 'Antigravity', description: 'Deploys OpenSpec shared skills and slash-command workflows.' },
+      { id: 'openspec_claude', name: 'Claude', description: 'Deploys Claude-specific skills and agent instructions.' },
+      { id: 'openspec_codex', name: 'Codex', description: 'Deploys Codex-specific skills and custom Codex settings.' },
+      { id: 'openspec_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
+    ];
+
+    const BMAD_PLATFORMS = [
+      { id: 'bmad_antigravity', name: 'Antigravity', description: 'Deploys local Antigravity settings and skill definitions.' },
+      { id: 'bmad_claude', name: 'Claude', description: 'Deploys Claude-specific skills and agent instructions.' },
+      { id: 'bmad_codex', name: 'Codex', description: 'Deploys Codex-specific skills and custom Codex settings.' },
+      { id: 'bmad_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
+    ];
+
+    // Fetch statuses for all components
+    const statuses = await Promise.all(TOOLKIT_COMPONENTS.map(async (comp) => {
+      const srcBase = comp.id.startsWith('openspec_') ? openspecPath : bmadPath;
+      
+      let sourceExists = false;
+      try {
+        if (comp.isMulti) {
+          const folderChecks = await Promise.all(comp.folders.map(async (f) => {
+            return await window.api.pathExists(srcBase + '\\' + f.name);
+          }));
+          sourceExists = folderChecks.every(v => v);
+        } else {
+          sourceExists = await window.api.pathExists(srcBase + '\\' + comp.folderName);
+        }
+      } catch (err) {
+        sourceExists = false;
+      }
+
+      let exists = false;
+      if (comp.isMulti) {
+        const subResults = await Promise.all(comp.folders.map(async (f) => {
+          try {
+            const status = await window.api.checkToolkitStatus({
+              worktreePath: activeWorktreePath,
+              name: f.name
+            });
+            return status.exists;
+          } catch (e) {
+            return false;
+          }
+        }));
+        exists = subResults.every(r => r);
+      } else {
+        try {
+          const status = await window.api.checkToolkitStatus({
+            worktreePath: activeWorktreePath,
+            name: comp.folderName
+          });
+          exists = status.exists;
+        } catch (e) {
+          exists = false;
+        }
+      }
+
+      return {
+        id: comp.id,
+        name: comp.name,
+        sourceExists,
+        exists
+      };
+    }));
+
+    const getStatus = (id) => statuses.find(s => s.id === id) || { exists: false, sourceExists: false };
+
+    function renderPlatformItem(platform) {
+      const stateItem = getStatus(platform.id);
+      let badgeHTML = '';
+      let checked = '';
+      let disabledAttr = '';
+      let opacityStyle = '';
+
+      if (!stateItem.sourceExists) {
+        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(239, 68, 68, 0.15); color: rgb(248, 113, 113); border: 1px solid rgba(239, 68, 68, 0.25);">Source Missing</span>`;
+        disabledAttr = 'disabled';
+        opacityStyle = 'opacity: 0.65;';
+      } else if (stateItem.exists) {
+        badgeHTML = `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153);">Active</span>`;
+        checked = 'checked';
+      } else {
+        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked">Not Present</span>`;
+      }
+
+      return `
+        <div class="symlink-item" style="margin-bottom: 8px; border-radius: var(--radius-md); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); ${opacityStyle}">
+          <label class="symlink-label" style="cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; width: 100%;">
+            <input type="checkbox" class="agent-toolkit-checkbox" data-id="${platform.id}" ${checked} ${disabledAttr} style="margin-right: 12px; cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'};" />
+            <div class="symlink-info" style="display: flex; flex-direction: column; gap: 2px;">
+              <span class="symlink-name" style="font-size: 13px; font-weight: 600; color: var(--text-default);">${platform.name}</span>
+              <span class="symlink-target-path" style="font-size: 11px; color: var(--text-tertiary);">${platform.description}</span>
+            </div>
+          </label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${badgeHTML}
+          </div>
+        </div>
+      `;
+    }
+
+    // Generate OpenSpec HTML Group
+    const osItemsHtml = OPENSPEC_PLATFORMS.map(p => renderPlatformItem(p)).join('');
+    const osCoreActive = getStatus('openspec_core').exists;
+    const osCoreBadge = osCoreActive 
+      ? `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); font-size: 10px; padding: 2px 6px;">Core Active</span>` 
+      : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
+      
+    const openspecHtml = `
+      <div class="symlink-item" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
+              ${icons.agentToolkit}
+            </div>
+            <div class="symlink-info">
+              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">OpenSpec Configuration</span>
+              <span class="symlink-target-path" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Deploy OpenSpec core and agent-specific files.</span>
+            </div>
+          </div>
+          ${osCoreBadge}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 6px;">
+          ${osItemsHtml}
+        </div>
+      </div>
+    `;
+
+    // Generate BMAD HTML Group
+    const bmadItemsHtml = BMAD_PLATFORMS.map(p => renderPlatformItem(p)).join('');
+    const bmadCoreActive = getStatus('bmad_core').exists;
+    const bmadCoreBadge = bmadCoreActive 
+      ? `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); font-size: 10px; padding: 2px 6px;">Core Active</span>` 
+      : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
+
+    const bmadHtml = `
+      <div class="symlink-item" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
+              ${icons.antigravity}
+            </div>
+            <div class="symlink-info">
+              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">BMAD Method Configuration</span>
+              <span class="symlink-target-path" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Deploy BMAD Method core and agent-specific files.</span>
+            </div>
+          </div>
+          ${bmadCoreBadge}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 6px;">
+          ${bmadItemsHtml}
+        </div>
+      </div>
+    `;
+
+    listContainer.innerHTML = `
+      <div class="symlink-list" style="max-height: none;">
+        ${openspecHtml}
+        ${bmadHtml}
+      </div>
+    `;
+
+    listContainer.scrollTop = savedScrollTop;
+
+    listContainer.querySelectorAll('.agent-toolkit-checkbox').forEach((checkbox) => {
+      checkbox.addEventListener('change', async (e) => {
+        const target = e.target;
+        const id = target.dataset.id;
+        const isChecked = target.checked;
+        const comp = TOOLKIT_COMPONENTS.find(c => c.id === id);
+
+        if (!comp) return;
+        target.disabled = true;
+
+        const srcBase = id.startsWith('openspec_') ? openspecPath : bmadPath;
+
+        const safeDeploy = async (name, sourcePath) => {
+          const res = await window.api.deployToolkit({
+            worktreePath: activeWorktreePath,
+            name,
+            sourcePath
+          });
+          if (!res.success) throw new Error(res.error || `Failed to deploy ${name}`);
+        };
+
+        const safeRemove = async (name, sourcePath) => {
+          const res = await window.api.removeToolkit({
+            worktreePath: activeWorktreePath,
+            name,
+            sourcePath
+          });
+          if (!res.success) throw new Error(res.error || `Failed to remove ${name}`);
+        };
+
+        try {
+          if (isChecked) {
+            showToast(`Activating ${comp.name}...`, 'info');
+            
+            // 1. Deploy platform component itself
+            if (comp.isMulti) {
+              for (const f of comp.folders) {
+                await safeDeploy(f.name, srcBase + '\\' + f.name);
+              }
+            } else {
+              await safeDeploy(comp.folderName, srcBase + '\\' + comp.folderName);
+            }
+
+            // Exclude platform component patterns
+            await window.api.updateGitExclude({
+              worktreePath: activeWorktreePath,
+              patterns: comp.gitExcludePatterns,
+              action: 'add'
+            });
+
+            // 2. Deploy core and shared components if not already active
+            if (id.startsWith('openspec_')) {
+              // OpenSpec Core
+              const coreStatus = getStatus('openspec_core');
+              if (!coreStatus.exists) {
+                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
+                if (coreComp) {
+                  await safeDeploy(coreComp.folderName, openspecPath + '\\' + coreComp.folderName);
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: coreComp.gitExcludePatterns,
+                    action: 'add'
+                  });
+                }
+              }
+
+              // OpenSpec Shared
+              const sharedStatus = getStatus('openspec_antigravity');
+              if (!sharedStatus.exists) {
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
+                if (sharedComp) {
+                  for (const f of sharedComp.folders) {
+                    await safeDeploy(f.name, openspecPath + '\\' + f.name);
+                  }
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: sharedComp.gitExcludePatterns,
+                    action: 'add'
+                  });
+                }
+              }
+            } else if (id.startsWith('bmad_')) {
+              // BMAD Core
+              const coreStatus = getStatus('bmad_core');
+              if (!coreStatus.exists) {
+                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_core');
+                if (coreComp) {
+                  // create _bmad-output directory
+                  const outputDir = cleanPath(activeWorktreePath) + '\\_bmad-output';
+                  await window.api.createDirectory(outputDir);
+                  
+                  await safeDeploy(coreComp.folderName, bmadPath + '\\' + coreComp.folderName);
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: coreComp.gitExcludePatterns,
+                    action: 'add'
+                  });
+                }
+              }
+
+              // BMAD Shared
+              const sharedStatus = getStatus('bmad_shared');
+              if (!sharedStatus.exists) {
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_shared');
+                if (sharedComp) {
+                  for (const f of sharedComp.folders) {
+                    await safeDeploy(f.name, bmadPath + '\\' + f.name);
+                  }
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: sharedComp.gitExcludePatterns,
+                    action: 'add'
+                  });
+                }
+              }
+
+              // BMAD Agent Skills (for Antigravity and Claude)
+              if (id === 'bmad_antigravity' || id === 'bmad_claude') {
+                const skillsStatus = getStatus('bmad_agent_skills');
+                if (!skillsStatus.exists) {
+                  const skillsComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_agent_skills');
+                  if (skillsComp) {
+                    await safeDeploy(skillsComp.folderName, bmadPath + '\\' + skillsComp.folderName);
+                    await window.api.updateGitExclude({
+                      worktreePath: activeWorktreePath,
+                      patterns: skillsComp.gitExcludePatterns,
+                      action: 'add'
+                    });
+                  }
+                }
+              }
+            }
+
+            showToast(`Successfully activated ${comp.name}!`, 'success');
+          } else {
+            showToast(`Deactivating ${comp.name}...`, 'info');
+            
+            // 1. Remove platform component itself
+            if (comp.isMulti) {
+              for (const f of comp.folders) {
+                await safeRemove(f.name, srcBase + '\\' + f.name);
+              }
+            } else {
+              await safeRemove(comp.folderName, srcBase + '\\' + comp.folderName);
+            }
+            await window.api.updateGitExclude({
+              worktreePath: activeWorktreePath,
+              patterns: comp.gitExcludePatterns,
+              action: 'remove'
+            });
+
+            // 2. Remove core and shared components if no longer needed
+            if (id.startsWith('openspec_')) {
+              const activeOpenSpecChecks = OPENSPEC_PLATFORMS.filter(p => {
+                if (p.id === id) return false;
+                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
+                return cb && cb.checked;
+              });
+
+              if (activeOpenSpecChecks.length === 0) {
+                // Remove OpenSpec Core
+                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
+                if (coreComp) {
+                  await safeRemove(coreComp.folderName, openspecPath + '\\' + coreComp.folderName);
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: coreComp.gitExcludePatterns,
+                    action: 'remove'
+                  });
+                }
+                // Remove OpenSpec Shared
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
+                if (sharedComp) {
+                  for (const f of sharedComp.folders) {
+                    await safeRemove(f.name, openspecPath + '\\' + f.name);
+                  }
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: sharedComp.gitExcludePatterns,
+                    action: 'remove'
+                  });
+                }
+              }
+            } else if (id.startsWith('bmad_')) {
+              const activeBmadChecks = BMAD_PLATFORMS.filter(p => {
+                if (p.id === id) return false;
+                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
+                return cb && cb.checked;
+              });
+
+              if (activeBmadChecks.length === 0) {
+                // Remove BMAD Core
+                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_core');
+                if (coreComp) {
+                  await safeRemove(coreComp.folderName, bmadPath + '\\' + coreComp.folderName);
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: coreComp.gitExcludePatterns,
+                    action: 'remove'
+                  });
+                }
+                // Remove BMAD Shared
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_shared');
+                if (sharedComp) {
+                  for (const f of sharedComp.folders) {
+                    await safeRemove(f.name, bmadPath + '\\' + f.name);
+                  }
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: sharedComp.gitExcludePatterns,
+                    action: 'remove'
+                  });
+                }
+              }
+
+              // Deactivate bmad_agent_skills if both bmad_antigravity and bmad_claude are unchecked
+              const isAntigravityActive = id === 'bmad_antigravity' ? false : (listContainer.querySelector(`.agent-toolkit-checkbox[data-id="bmad_antigravity"]`)?.checked || false);
+              const isClaudeActive = id === 'bmad_claude' ? false : (listContainer.querySelector(`.agent-toolkit-checkbox[data-id="bmad_claude"]`)?.checked || false);
+              
+              if (!isAntigravityActive && !isClaudeActive) {
+                const skillsComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_agent_skills');
+                if (skillsComp) {
+                  await safeRemove(skillsComp.folderName, bmadPath + '\\' + skillsComp.folderName);
+                  await window.api.updateGitExclude({
+                    worktreePath: activeWorktreePath,
+                    patterns: skillsComp.gitExcludePatterns,
+                    action: 'remove'
+                  });
+                }
+              }
+            }
+
+            showToast(`Successfully deactivated ${comp.name}.`, 'success');
+          }
+        } catch (err) {
+          showToast(`Error: ${err.message}`, 'error');
+          target.checked = !isChecked;
+        } finally {
+          target.disabled = false;
+          await refreshAgentToolkitStatus();
+        }
+      });
+    });
+
+  } catch (err) {
+    listContainer.innerHTML = `<div style="color:var(--danger-default); padding:16px;">Failed to load status: ${err.message}</div>`;
+  }
+}
+
+if (dom.btnCloseAgentToolkitScreen) {
+  dom.btnCloseAgentToolkitScreen.addEventListener('click', hideAgentToolkitScreen);
+}
+
+if (dom.btnAgentToolkit) {
+  dom.btnAgentToolkit.addEventListener('click', () => {
+    const activeWorktreePath = getRequiredActiveWorktreePath();
+    if (!activeWorktreePath) return;
+    showAgentToolkitScreen();
   });
 }
 

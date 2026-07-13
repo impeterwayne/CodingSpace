@@ -96,12 +96,38 @@ async function openSymlinkModal({ activeWorktreePath, dom, state, icons, configu
     }
 
     const updated = [...currentTargets, { name: nameVal, targetPath: pathVal }];
+
+    let linkSuccess = false;
+    if (activeWorktreePath) {
+      try {
+        showToast(`Creating symlink for ${nameVal}...`, 'info');
+        const res = await api.createSymlink({
+          worktreePath: activeWorktreePath,
+          name: nameVal,
+          targetPath: pathVal,
+        });
+        if (res.success) {
+          linkSuccess = true;
+          showToast(`Linked ${nameVal} successfully!`, 'success');
+        } else {
+          showToast(`Link failed: ${res.error}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Link failed: ${err.message}`, 'error');
+      }
+    }
+
     await saveAndReload(updated);
 
     // Clear inputs
     pathInput.value = '';
     nameInput.value = '';
-    showToast(`Added "${nameVal}" to managed symlinks`, 'success');
+    
+    if (linkSuccess) {
+      showToast(`Added and linked "${nameVal}" successfully!`, 'success');
+    } else {
+      showToast(`Added "${nameVal}" to managed symlinks`, 'success');
+    }
   });
 
   // Scan and merge existing symlinks in the active worktree
@@ -298,6 +324,19 @@ async function renderSymlinkList(modalBody, activeWorktreePath, symlinkTargets, 
     listContainer.querySelectorAll('.symlink-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         const name = btn.dataset.name;
+        if (activeWorktreePath) {
+          try {
+            showToast(`Removing symlink for ${name}...`, 'info');
+            const res = await api.deleteSymlink({ worktreePath: activeWorktreePath, name });
+            if (res && !res.success) {
+              showToast(`Failed to remove link for ${name}: ${res.error}`, 'error');
+            } else {
+              showToast(`Removed link for ${name}!`, 'success');
+            }
+          } catch (err) {
+            console.error('Failed to delete symlink:', err);
+          }
+        }
         const updated = symlinkTargets.filter((t) => t.name !== name);
         await saveAndReload(updated);
       });

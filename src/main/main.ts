@@ -386,6 +386,218 @@ app.whenReady().then(() => {
     }
   });
 
+  ipcMain.handle('git:update-exclude', (_, { worktreePath, patterns, action }) => {
+    try {
+      let excludePath;
+      try {
+        const gitExcludeRel = execSync('git rev-parse --git-path info/exclude', {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          timeout: 3000,
+        }).trim();
+        excludePath = path.resolve(worktreePath, gitExcludeRel);
+      } catch (e) {
+        excludePath = path.join(worktreePath, '.git', 'info', 'exclude');
+      }
+
+      const infoDir = path.dirname(excludePath);
+      
+      let lines = [];
+      if (fs.existsSync(excludePath)) {
+        lines = fs.readFileSync(excludePath, 'utf-8')
+          .split(/\r?\n/)
+          .map(l => l.trim());
+      }
+
+      if (action === 'add') {
+        if (!fs.existsSync(infoDir)) {
+          fs.mkdirSync(infoDir, { recursive: true });
+        }
+        
+        let changed = false;
+        const newLines = [...lines];
+        
+        const header = '# Agent toolkit (auto-added by coding-space)';
+        if (!newLines.includes(header) && !newLines.includes('# SkillHub toolkit (auto-added by coding-space)')) {
+          if (newLines.length > 0 && newLines[newLines.length - 1] !== '') {
+            newLines.push('');
+          }
+          newLines.push(header);
+          changed = true;
+        }
+        
+        for (const pattern of patterns) {
+          if (!newLines.includes(pattern)) {
+            newLines.push(pattern);
+            changed = true;
+          }
+        }
+        
+        if (changed) {
+          fs.writeFileSync(excludePath, newLines.join('\n') + '\n', 'utf-8');
+        }
+      } else if (action === 'remove') {
+        if (fs.existsSync(excludePath)) {
+          let changed = false;
+          const filteredLines = lines.filter(line => {
+            if (patterns.includes(line)) {
+              changed = true;
+              return false;
+            }
+            if (line === '# SkillHub toolkit (auto-added by coding-space)' || line === '# Agent toolkit (auto-added by coding-space)') {
+              changed = true;
+              return false;
+            }
+            return true;
+          });
+          
+          const finalLines = [];
+          for (let i = 0; i < filteredLines.length; i++) {
+            if (filteredLines[i] === '' && (i === 0 || filteredLines[i-1] === '')) {
+              changed = true;
+              continue;
+            }
+            finalLines.push(filteredLines[i]);
+          }
+          
+          if (changed) {
+            fs.writeFileSync(excludePath, finalLines.join('\n') + '\n', 'utf-8');
+          }
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('dir:create', (_, { dirPath }) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('path:exists', (_, targetPath) => {
+    return fs.existsSync(targetPath);
+  });
+
+  // Directory recursive copy helper
+  function copyFolderSync(from, to) {
+    if (!fs.existsSync(from)) return;
+    fs.mkdirSync(to, { recursive: true });
+    const entries = fs.readdirSync(from, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const srcPath = path.join(from, entry.name);
+      const destPath = path.join(to, entry.name);
+
+      if (entry.isDirectory()) {
+        copyFolderSync(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+
+  ipcMain.handle('toolkit:get-default-sources', () => {
+    const toolkitsDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'toolkits')
+      : path.join(app.getAppPath(), 'toolkits');
+    return {
+      openspecPath: path.join(toolkitsDir, 'OpenSpec'),
+      bmadPath: path.join(toolkitsDir, 'BMAD-METHOD')
+    };
+  });
+
+  ipcMain.handle('toolkit:check-status', (_, { worktreePath, name }) => {
+    const targetPath = path.join(worktreePath, name);
+    try {
+      const exists = fs.existsSync(targetPath);
+      return { exists };
+    } catch (e) {
+      return { exists: false };
+    }
+  });
+
+  ipcMain.handle('toolkit:deploy', (_, { worktreePath, name, sourcePath }) => {
+    const destPath = path.join(worktreePath, name);
+    try {
+      if (!fs.existsSync(sourcePath)) {
+        return { success: false, error: `Source path does not exist: ${sourcePath}` };
+      }
+      const stats = fs.statSync(sourcePath);
+      if (stats.isDirectory()) {
+        if (!fs.existsSync(destPath)) {
+          fs.mkdirSync(destPath, { recursive: true });
+        }
+        const items = fs.readdirSync(sourcePath);
+        for (const item of items) {
+          const itemSrc = path.join(sourcePath, item);
+          const itemDest = path.join(destPath, item);
+          if (fs.existsSync(itemDest)) {
+            fs.rmSync(itemDest, { recursive: true, force: true });
+          }
+          copyFolderSync(itemSrc, itemDest);
+        }
+      } else {
+        if (!fs.existsSync(path.dirname(destPath))) {
+          fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        }
+        if (fs.existsSync(destPath)) {
+          fs.rmSync(destPath, { recursive: true, force: true });
+        }
+        fs.copyFileSync(sourcePath, destPath);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('toolkit:remove', (_, { worktreePath, name, sourcePath }) => {
+    const destPath = path.join(worktreePath, name);
+    try {
+      if (sourcePath && fs.existsSync(sourcePath)) {
+        const stats = fs.statSync(sourcePath);
+        if (stats.isDirectory()) {
+          if (fs.existsSync(destPath)) {
+            const items = fs.readdirSync(sourcePath);
+            for (const item of items) {
+              const itemDest = path.join(destPath, item);
+              if (fs.existsSync(itemDest)) {
+                fs.rmSync(itemDest, { recursive: true, force: true });
+              }
+            }
+            try {
+              if (fs.readdirSync(destPath).length === 0) {
+                fs.rmSync(destPath, { recursive: true, force: true });
+              }
+            } catch (e) {
+              // Ignore failure to remove empty directory
+            }
+          }
+        } else {
+          if (fs.existsSync(destPath)) {
+            fs.rmSync(destPath, { recursive: true, force: true });
+          }
+        }
+      } else {
+        if (fs.existsSync(destPath)) {
+          fs.rmSync(destPath, { recursive: true, force: true });
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+
   // ── PTY / Embedded Terminal ──────────────────────────
 
   ipcMain.handle('pty:create', (_, { cwd, id }) => {

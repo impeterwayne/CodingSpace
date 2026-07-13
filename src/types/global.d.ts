@@ -51,6 +51,8 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        openspecSourcePath?: string;
+        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }>;
@@ -60,6 +62,8 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        openspecSourcePath?: string;
+        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }) => Promise<{
@@ -68,6 +72,8 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        openspecSourcePath?: string;
+        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }>;
@@ -86,6 +92,18 @@ declare global {
       getBranches: (path: string) => Promise<string[]>;
       createBranch: (opts: any) => Promise<any>;
       mergeWorktreeToBranch: (opts: any) => Promise<any>;
+      selectDirectory: (title: string) => Promise<string | null>;
+      checkSymlinkStatus: (opts: { worktreePath: string; name: string; targetPath: string }) => Promise<any>;
+      createSymlink: (opts: { worktreePath: string; name: string; targetPath: string }) => Promise<any>;
+      deleteSymlink: (opts: { worktreePath: string; name: string }) => Promise<any>;
+      scanSymlinks: (opts: { worktreePath: string }) => Promise<any[]>;
+      updateGitExclude: (opts: { worktreePath: string; patterns: string[]; action: 'add' | 'remove' }) => Promise<any>;
+      createDirectory: (path: string) => Promise<any>;
+      pathExists: (path: string) => Promise<boolean>;
+      checkToolkitStatus: (opts: { worktreePath: string; name: string }) => Promise<{ exists: boolean }>;
+      deployToolkit: (opts: { worktreePath: string; name: string; sourcePath: string }) => Promise<{ success: boolean; error?: string }>;
+      removeToolkit: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ success: boolean; error?: string }>;
+      getDefaultToolkitSources: () => Promise<{ openspecPath: string; bmadPath: string }>;
     };
   }
 }

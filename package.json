@@ -49,7 +49,12 @@
       "node_modules/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "toolkits",
+        "to": "toolkits"
+      }
+    ],
     "win": {
       "target": [
         {

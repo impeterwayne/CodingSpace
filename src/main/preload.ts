@@ -67,4 +67,14 @@ contextBridge.exposeInMainWorld('api', {
   createSymlink: (opts) => ipcRenderer.invoke('symlink:create', opts),
   deleteSymlink: (opts) => ipcRenderer.invoke('symlink:delete', opts),
   scanSymlinks: (opts) => ipcRenderer.invoke('symlink:scan', opts),
+
+  // ── Git Exclude / Directory operations ──
+  updateGitExclude: (opts) => ipcRenderer.invoke('git:update-exclude', opts),
+  createDirectory: (path) => ipcRenderer.invoke('dir:create', { dirPath: path }),
+  pathExists: (path) => ipcRenderer.invoke('path:exists', path),
+  checkToolkitStatus: (opts) => ipcRenderer.invoke('toolkit:check-status', opts),
+  deployToolkit: (opts) => ipcRenderer.invoke('toolkit:deploy', opts),
+  removeToolkit: (opts) => ipcRenderer.invoke('toolkit:remove', opts),
+  getDefaultToolkitSources: () => ipcRenderer.invoke('toolkit:get-default-sources'),
 });
+

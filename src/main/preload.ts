@@ -60,4 +60,11 @@ contextBridge.exposeInMainWorld('api', {
   getBranches: (path) => ipcRenderer.invoke('get-branches', path),
   createBranch: (opts) => ipcRenderer.invoke('create-branch', opts),
   mergeWorktreeToBranch: (opts) => ipcRenderer.invoke('merge-worktree-to-branch', opts),
+
+  // ── Symlink operations ──
+  selectDirectory: (title) => ipcRenderer.invoke('select-directory', title),
+  checkSymlinkStatus: (opts) => ipcRenderer.invoke('symlink:check-status', opts),
+  createSymlink: (opts) => ipcRenderer.invoke('symlink:create', opts),
+  deleteSymlink: (opts) => ipcRenderer.invoke('symlink:delete', opts),
+  scanSymlinks: (opts) => ipcRenderer.invoke('symlink:scan', opts),
 });

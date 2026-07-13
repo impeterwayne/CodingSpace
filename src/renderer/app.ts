@@ -152,6 +152,7 @@ const dom = {
   btnAndroidStudio: $('#btn-android-studio'),
   btnAntigravity: $('#btn-antigravity'),
   btnAntigravityAgent: $('#btn-antigravity-agent'),
+  btnManageSymlinks: $('#btn-manage-symlinks'),
   btnToggleWorkspaceSidebar: $('#btn-toggle-workspace-sidebar'),
   sidebarResizeHandle: $('#sidebar-resize-handle'),
   sidebar: $('#sidebar'),
@@ -165,6 +166,16 @@ const dom = {
   btnBrowseAntigravityAgent: $('#btn-browse-antigravity-agent'),
   btnBrowseAndroidStudio: $('#btn-browse-android-studio'),
   btnBrowseVsCode: $('#btn-browse-vscode'),
+  symlinkScreen: $('#symlink-screen'),
+  btnCloseSymlinkScreen: $('#btn-close-symlink-screen'),
+  symlinkScreenActiveName: $('#symlink-screen-active-name'),
+  symlinkScreenActivePath: $('#symlink-screen-active-path'),
+  symlinkScreenListContainer: $('#symlink-screen-list-container'),
+  symlinkScreenNewPath: $('#symlink-screen-new-path'),
+  symlinkScreenNewName: $('#symlink-screen-new-name'),
+  btnBrowseSymlinkScreen: $('#btn-browse-symlink-screen'),
+  btnAddSymlinkScreenTarget: $('#btn-add-symlink-screen-target'),
+  symlinkScreenNameGroup: $('#symlink-screen-name-group'),
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
@@ -388,6 +399,7 @@ const iconRaw = {
   antigravity: loadIcon('antigravity'),
   'more-vertical': loadIcon('more-vertical'),
   copy: loadIcon('copy'),
+  link: loadIcon('link'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -410,6 +422,7 @@ const icons = {
   antigravity: iconSvg(iconRaw.antigravity, 12),
   moreVertical: iconSvg(iconRaw['more-vertical'], 12),
   copy: iconSvg(iconRaw.copy, 12),
+  link: iconSvg(iconRaw.link, 12),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -1749,6 +1762,14 @@ bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndro
 bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
 bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAntigravityAgent(wtPath), 'Opening Agent Manager...');
 
+if (dom.btnManageSymlinks) {
+  dom.btnManageSymlinks.addEventListener('click', () => {
+    const activeWorktreePath = getRequiredActiveWorktreePath();
+    if (!activeWorktreePath) return;
+    showSymlinkScreen();
+  });
+}
+
 // SIDEBAR
 // ═══════════════════════════════════════════════════════
 
@@ -2219,6 +2240,7 @@ async function showSettingsScreen() {
 
   dom.terminalArea.classList.add('hidden');
   dom.workspaceSidebar.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
   dom.settingsScreen.classList.remove('hidden');
 
   try {
@@ -2264,6 +2286,277 @@ async function hideSettingsScreen() {
   dom.workspaceSidebar.classList.remove('hidden');
   fitActiveTerminal();
   startAutoRefreshLoop();
+}
+
+// ── Symlink Screen ─────────────────────────────────────
+async function showSymlinkScreen() {
+  const activeWorktreePath = state.activeWorktreePath;
+  const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
+
+  if (dom.symlinkScreenActiveName) dom.symlinkScreenActiveName.textContent = activeWorktreeName;
+  if (dom.symlinkScreenActivePath) dom.symlinkScreenActivePath.textContent = activeWorktreePath || 'Please select a worktree first.';
+
+  dom.terminalArea.classList.add('hidden');
+  dom.workspaceSidebar.classList.add('hidden');
+  dom.settingsScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.remove('hidden');
+
+  if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = '';
+  if (dom.symlinkScreenNewName) dom.symlinkScreenNewName.value = '';
+  if (dom.symlinkScreenNameGroup) dom.symlinkScreenNameGroup.classList.add('hidden');
+
+  let targets = state.settings?.symlinkTargets || [];
+  if (activeWorktreePath) {
+    try {
+      const scanned = await window.api.scanSymlinks({ worktreePath: activeWorktreePath });
+      if (scanned && scanned.length > 0) {
+        let changed = false;
+        const updated = [...targets];
+
+        for (const scannedItem of scanned) {
+          const existingIndex = updated.findIndex((t) => t.name.toLowerCase() === scannedItem.name.toLowerCase());
+          if (existingIndex === -1) {
+            updated.push(scannedItem);
+            changed = true;
+          } else if (updated[existingIndex].targetPath !== scannedItem.targetPath) {
+            updated[existingIndex].targetPath = scannedItem.targetPath;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          state.settings = await window.api.updateSettings({
+            ...state.settings,
+            symlinkTargets: updated,
+          });
+          targets = state.settings.symlinkTargets;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to scan and merge symlinks:', e.message);
+    }
+  }
+
+  await renderSymlinkScreenList(targets);
+}
+
+function hideSymlinkScreen() {
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  dom.terminalArea.classList.remove('hidden');
+  dom.workspaceSidebar.classList.remove('hidden');
+  fitActiveTerminal();
+  startAutoRefreshLoop();
+}
+
+async function renderSymlinkScreenList(symlinkTargets) {
+  const listContainer = dom.symlinkScreenListContainer;
+  if (!listContainer) return;
+
+  if (!symlinkTargets || symlinkTargets.length === 0) {
+    listContainer.innerHTML = `
+      <div class="symlink-empty-state">
+        <div class="symlink-empty-icon" style="font-size:24px;">🔗</div>
+        <div style="font-weight:600; margin-top:4px;">No managed symlinks yet</div>
+        <p class="form-hint" style="margin:4px 0 0; font-size:11px;">Add a target folder on the right to link it to your active project.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const activeWorktreePath = state.activeWorktreePath;
+  if (!activeWorktreePath) {
+    listContainer.innerHTML = `
+      <div class="symlink-empty-state">
+        <div style="font-weight:600; color: var(--danger-default);">No Active Worktree</div>
+        <p class="form-hint" style="margin:4px 0 0; font-size:11px;">Open a worktree or project first to select/unselect symlinks.</p>
+      </div>
+    `;
+    return;
+  }
+
+  listContainer.innerHTML = `<div style="display:flex; justify-content:center; padding:16px; align-items:center; gap:8px;"><span class="spinner"></span> Checking status...</div>`;
+
+  try {
+    const statuses = await Promise.all(
+      symlinkTargets.map(async (t) => {
+        try {
+          const status = await window.api.checkSymlinkStatus({
+            worktreePath: activeWorktreePath,
+            name: t.name,
+            targetPath: t.targetPath,
+          });
+          return { ...t, status };
+        } catch (e) {
+          return { ...t, status: { exists: false, pointsToTarget: false, error: e.message } };
+        }
+      })
+    );
+
+    listContainer.innerHTML = `
+      <div class="symlink-list">
+        ${statuses.map((t) => {
+          let statusBadge = '';
+          let checked = '';
+          let itemClass = '';
+          let titleText = `Target: ${t.targetPath}`;
+
+          if (t.status.exists) {
+            if (t.status.pointsToTarget) {
+              statusBadge = `<span class="symlink-status-badge symlink-status-linked">Linked</span>`;
+              checked = 'checked';
+            } else if (t.status.isRealDirectory) {
+              statusBadge = `<span class="symlink-status-badge" style="background: rgba(239, 68, 68, 0.15); color: rgb(248, 113, 113);" title="A real folder exists at this name, not a link.">Folder Conflict</span>`;
+              itemClass = 'conflict';
+            } else {
+              statusBadge = `<span class="symlink-status-badge" style="background: rgba(245, 158, 11, 0.15); color: rgb(251, 191, 36);" title="Points to: ${t.status.currentTarget}">Different Target</span>`;
+              itemClass = 'different';
+            }
+          } else {
+            statusBadge = `<span class="symlink-status-badge symlink-status-unlinked">Not Linked</span>`;
+          }
+
+          return `
+            <div class="symlink-item ${itemClass}">
+              <label class="symlink-label" title="${titleText}">
+                <input type="checkbox" class="symlink-checkbox" data-name="${t.name}" data-target="${t.targetPath}" ${checked} />
+                <div class="symlink-info">
+                  <span class="symlink-name">${t.name}</span>
+                  <span class="symlink-target-path">${t.targetPath}</span>
+                </div>
+              </label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                ${statusBadge}
+                <button type="button" class="btn-icon symlink-delete-btn" data-name="${t.name}" title="Remove from list">
+                  ${icons.trash}
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Bind checkbox toggle events
+    listContainer.querySelectorAll('.symlink-checkbox').forEach((checkbox) => {
+      checkbox.addEventListener('change', async (e) => {
+        const target = e.target;
+        const name = target.dataset.name;
+        const targetPath = target.dataset.target;
+        const isChecked = target.checked;
+
+        target.disabled = true;
+        try {
+          if (isChecked) {
+            showToast(`Creating symlink for ${name}...`, 'info');
+            const res = await window.api.createSymlink({ worktreePath: activeWorktreePath, name, targetPath });
+            if (res.success) {
+              showToast(`Linked ${name} successfully!`, 'success');
+            } else {
+              showToast(`Link failed: ${res.error}`, 'error');
+              target.checked = false;
+            }
+          } else {
+            showToast(`Removing symlink for ${name}...`, 'info');
+            const res = await window.api.deleteSymlink({ worktreePath: activeWorktreePath, name });
+            if (res.success) {
+              showToast(`Removed link for ${name}!`, 'success');
+            } else {
+              showToast(`Removal failed: ${res.error}`, 'error');
+              target.checked = true;
+            }
+          }
+        } catch (err) {
+          showToast(`Error: ${err.message}`, 'error');
+          target.checked = !isChecked;
+        } finally {
+          target.disabled = false;
+          renderSymlinkScreenList(symlinkTargets);
+        }
+      });
+    });
+
+    // Bind delete target events
+    listContainer.querySelectorAll('.symlink-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const name = btn.dataset.name;
+        const updated = symlinkTargets.filter((t) => t.name !== name);
+        state.settings = await window.api.updateSettings({
+          ...state.settings,
+          symlinkTargets: updated,
+        });
+        await renderSymlinkScreenList(state.settings.symlinkTargets);
+      });
+    });
+
+  } catch (err) {
+    listContainer.innerHTML = `<div style="color:var(--danger-default); padding:16px;">Failed to load status: ${err.message}</div>`;
+  }
+}
+
+// ── Bind Symlink Screen Listeners ───────────────────────
+if (dom.btnCloseSymlinkScreen) {
+  dom.btnCloseSymlinkScreen.addEventListener('click', hideSymlinkScreen);
+}
+
+const handleSymlinkScreenBrowse = async () => {
+  try {
+    const selectedDir = await window.api.selectDirectory('Select Folder to Symlink');
+    if (selectedDir) {
+      if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = selectedDir;
+      if (dom.symlinkScreenNewName) {
+        const leaf = selectedDir.split(/[\\/]/).filter(Boolean).pop() || '';
+        dom.symlinkScreenNewName.value = leaf;
+      }
+      if (dom.symlinkScreenNameGroup) dom.symlinkScreenNameGroup.classList.remove('hidden');
+    }
+  } catch (err) {
+    showToast(`Browse failed: ${err.message}`, 'error');
+  }
+};
+
+if (dom.symlinkScreenNewPath) {
+  dom.symlinkScreenNewPath.addEventListener('click', handleSymlinkScreenBrowse);
+}
+if (dom.btnBrowseSymlinkScreen) {
+  dom.btnBrowseSymlinkScreen.addEventListener('click', handleSymlinkScreenBrowse);
+}
+
+if (dom.btnAddSymlinkScreenTarget) {
+  dom.btnAddSymlinkScreenTarget.addEventListener('click', async () => {
+    const pathVal = dom.symlinkScreenNewPath ? dom.symlinkScreenNewPath.value.trim() : '';
+    let nameVal = dom.symlinkScreenNewName ? dom.symlinkScreenNewName.value.trim() : '';
+
+    if (!pathVal) {
+      showToast('Please select a target folder first', 'error');
+      return;
+    }
+    if (!nameVal) {
+      nameVal = pathVal.split(/[\\/]/).filter(Boolean).pop() || '';
+    }
+    if (!nameVal) {
+      showToast('Please enter a name for the symlink', 'error');
+      return;
+    }
+
+    const currentTargets = state.settings.symlinkTargets || [];
+    if (currentTargets.some((t) => t.name.toLowerCase() === nameVal.toLowerCase())) {
+      showToast(`A symlink target named "${nameVal}" already exists in the list`, 'error');
+      return;
+    }
+
+    const updated = [...currentTargets, { name: nameVal, targetPath: pathVal }];
+    state.settings = await window.api.updateSettings({
+      ...state.settings,
+      symlinkTargets: updated,
+    });
+
+    await renderSymlinkScreenList(state.settings.symlinkTargets);
+
+    if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = '';
+    if (dom.symlinkScreenNewName) dom.symlinkScreenNewName.value = '';
+    if (dom.symlinkScreenNameGroup) dom.symlinkScreenNameGroup.classList.add('hidden');
+    showToast(`Added "${nameVal}" to managed symlinks`, 'success');
+  });
 }
 
 // ── Add Worktree Modal ─────────────────────────────────

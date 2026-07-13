@@ -22,6 +22,16 @@ function registerWorkspaceIpc({ ipcMain, dialog, mainWindow, workspaceService })
     return result.filePaths[0];
   });
 
+  ipcMain.handle('select-directory', async (_, title) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: title || 'Select Folder',
+      defaultPath: 'D:\\',
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+
   ipcMain.handle('add-project', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],

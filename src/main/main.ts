@@ -268,6 +268,124 @@ app.whenReady().then(() => {
   ipcMain.handle('get-git-info', (_, dirPath) => getGitInfo(dirPath));
   ipcMain.handle('get-recent-commits', (_, dirPath) => getRecentCommits(dirPath));
 
+  ipcMain.handle('symlink:check-status', (_, { worktreePath, name, targetPath }) => {
+    const linkPath = path.join(worktreePath, name);
+    try {
+      const stats = fs.lstatSync(linkPath);
+      let currentTarget = null;
+      let isLink = stats.isSymbolicLink();
+      
+      if (isLink) {
+        currentTarget = fs.readlinkSync(linkPath);
+      } else if (stats.isDirectory()) {
+        try {
+          currentTarget = fs.readlinkSync(linkPath);
+          isLink = true;
+        } catch (e) {}
+      }
+      
+      if (isLink && currentTarget) {
+        const resolvedCurrent = path.resolve(worktreePath, currentTarget).toLowerCase();
+        const resolvedTarget = path.resolve(targetPath).toLowerCase();
+        if (resolvedCurrent === resolvedTarget) {
+          return { exists: true, pointsToTarget: true };
+        } else {
+          return { exists: true, pointsToTarget: false, currentTarget: resolvedCurrent };
+        }
+      } else {
+        return { exists: true, isRealDirectory: !isLink && stats.isDirectory(), pointsToTarget: false };
+      }
+    } catch (e) {
+      return { exists: false, pointsToTarget: false };
+    }
+  });
+
+  ipcMain.handle('symlink:create', (_, { worktreePath, name, targetPath }) => {
+    const linkPath = path.join(worktreePath, name);
+    try {
+      try {
+        const stats = fs.lstatSync(linkPath);
+        let isLink = stats.isSymbolicLink();
+        if (!isLink && stats.isDirectory()) {
+          try {
+            fs.readlinkSync(linkPath);
+            isLink = true;
+          } catch (e) {}
+        }
+        
+        if (isLink) {
+          fs.unlinkSync(linkPath);
+        } else {
+          return { success: false, error: `A real file or folder already exists at "${name}". Please delete or rename it first.` };
+        }
+      } catch (e) {}
+      
+      const type = process.platform === 'win32' ? 'junction' : 'dir';
+      fs.symlinkSync(targetPath, linkPath, type);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('symlink:delete', (_, { worktreePath, name }) => {
+    const linkPath = path.join(worktreePath, name);
+    try {
+      const stats = fs.lstatSync(linkPath);
+      let isLink = stats.isSymbolicLink();
+      if (!isLink && stats.isDirectory()) {
+        try {
+          fs.readlinkSync(linkPath);
+          isLink = true;
+        } catch (e) {}
+      }
+      
+      if (isLink) {
+        fs.unlinkSync(linkPath);
+        return { success: true };
+      } else {
+        return { success: false, error: `Refusing to delete: "${name}" is a real file or folder, not a symlink.` };
+      }
+    } catch (e) {
+      return { success: true };
+    }
+  });
+
+  ipcMain.handle('symlink:scan', (_, { worktreePath }) => {
+    if (!worktreePath) return [];
+    try {
+      const files = fs.readdirSync(worktreePath);
+      const discovered = [];
+      for (const file of files) {
+        const linkPath = path.join(worktreePath, file);
+        try {
+          const stats = fs.lstatSync(linkPath);
+          let isLink = stats.isSymbolicLink();
+          let target = null;
+          if (isLink) {
+            target = fs.readlinkSync(linkPath);
+          } else if (stats.isDirectory()) {
+            try {
+              target = fs.readlinkSync(linkPath);
+              isLink = true;
+            } catch (e) {}
+          }
+          
+          if (isLink && target) {
+            discovered.push({
+              name: file,
+              targetPath: path.resolve(worktreePath, target),
+            });
+          }
+        } catch (e) {}
+      }
+      return discovered;
+    } catch (err) {
+      console.error('Failed to scan symlinks:', err);
+      return [];
+    }
+  });
+
   // ── PTY / Embedded Terminal ──────────────────────────
 
   ipcMain.handle('pty:create', (_, { cwd, id }) => {

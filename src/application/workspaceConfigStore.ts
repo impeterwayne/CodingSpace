@@ -19,6 +19,11 @@ function normalizeSettings(settings) {
     antigravityAgentPath: typeof nextSettings.antigravityAgentPath === 'string' ? nextSettings.antigravityAgentPath.trim() : '',
     autoRefreshCurrentProject: typeof nextSettings.autoRefreshCurrentProject === 'boolean' ? nextSettings.autoRefreshCurrentProject : true,
     autoRefreshInterval: typeof nextSettings.autoRefreshInterval === 'number' && nextSettings.autoRefreshInterval >= 1 ? nextSettings.autoRefreshInterval : 10,
+    symlinkTargets: Array.isArray(nextSettings.symlinkTargets)
+      ? nextSettings.symlinkTargets
+          .filter(t => t && typeof t === 'object' && typeof t.name === 'string' && typeof t.targetPath === 'string')
+          .map(t => ({ name: t.name.trim(), targetPath: t.targetPath.trim() }))
+      : [],
   };
 }
 

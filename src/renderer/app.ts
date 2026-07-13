@@ -1213,6 +1213,37 @@ function switchWorktreeContext(wtPath) {
   reprewarmForWorktree();
 }
 
+async function openProjectWorkspaceAndTerminal(projectPath) {
+  const project = state.projects.find((p) => p.path === projectPath);
+  if (!project || !project.worktrees || project.worktrees.length === 0) return;
+
+  // Determine the target worktree
+  let targetWt = project.worktrees.find((w) => w.path === state.activeWorktreePath);
+  if (!targetWt) {
+    targetWt = project.worktrees.find((w) => getTerminalsForWorktree(w.path).length > 0);
+  }
+  if (!targetWt) {
+    targetWt = project.worktrees.find((w) => state.worktreeActiveTerminal.has(w.path));
+  }
+  if (!targetWt) {
+    targetWt = project.worktrees[0];
+  }
+
+  if (targetWt) {
+    const wtPath = targetWt.path;
+    const wtName = targetWt.name;
+    const wtTerminals = getTerminalsForWorktree(wtPath);
+    if (wtTerminals.length > 0) {
+      switchWorktreeContext(wtPath);
+    } else {
+      await createTerminal(wtPath, wtName, {
+        worktreePath: wtPath,
+      });
+      prewarmAllTools();
+    }
+  }
+}
+
 function switchToTerminal(id) {
   // Exit settings if active
   dom.settingsScreen.classList.add('hidden');
@@ -1653,6 +1684,12 @@ async function loadWorkspaces() {
     state.projects.forEach((p) => state.expandedProjects.add(p.path));
   }
   renderSidebar();
+
+  // Automatically select and open the first project on startup
+  if (!state.activeWorktreePath && state.projects.length > 0) {
+    const targetProjPath = state.selectedProjectPath || state.projects[0].path;
+    await openProjectWorkspaceAndTerminal(targetProjPath);
+  }
 }
 
 function getWorktreeDisplayMeta(project, wt) {
@@ -1716,9 +1753,12 @@ function renderSidebar() {
   // 1. Navigation items
   dom.projectsContainer.querySelectorAll('.project-nav-item').forEach((navEl) => {
     if (navEl instanceof HTMLElement) {
-      navEl.addEventListener('click', () => {
-        state.selectedProjectPath = navEl.dataset.projectPath || null;
+      navEl.addEventListener('click', async () => {
+        const projectPath = navEl.dataset.projectPath || null;
+        if (!projectPath) return;
+        state.selectedProjectPath = projectPath;
         renderSidebar();
+        await openProjectWorkspaceAndTerminal(projectPath);
       });
       navEl.addEventListener('contextmenu', (e) => {
         e.preventDefault();

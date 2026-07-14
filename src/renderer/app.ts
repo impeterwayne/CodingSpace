@@ -409,6 +409,8 @@ const iconRaw = {
   copy: loadIcon('copy'),
   link: loadIcon('link'),
   'agent-toolkit': loadIcon('agent-toolkit'),
+  openspec: loadIcon('openspec'),
+  bmad: loadIcon('bmad'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -432,7 +434,10 @@ const icons = {
   moreVertical: iconSvg(iconRaw['more-vertical'], 12),
   copy: iconSvg(iconRaw.copy, 12),
   link: iconSvg(iconRaw.link, 12),
+  codex: iconSvg(iconRaw.code, 12),
   agentToolkit: iconSvg(iconRaw['agent-toolkit'], 16),
+  openspec: iconSvg(iconRaw.openspec, 16),
+  bmad: iconSvg(iconRaw.bmad, 16),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -2760,11 +2765,11 @@ const TOOLKIT_COMPONENTS = [
     name: 'Antigravity OpenSpec Workflows',
     isMulti: true,
     folders: [
-      { name: '.agent\\skills', pattern: '.agent/skills/' },
-      { name: '.agent\\workflows', pattern: '.agent/workflows/' }
+      { name: '.agents\\skills', pattern: '.agents/skills/' },
+      { name: '.agents\\workflows', pattern: '.agents/workflows/' }
     ],
     description: 'Deploys OpenSpec shared skills and slash-command workflows.',
-    gitExcludePatterns: ['.agent/skills/openspec-*/', '.agent/workflows/opsx-*']
+    gitExcludePatterns: ['.agents/skills/openspec-*/', '.agents/workflows/opsx-*']
   },
 
   // --- BMAD Group Components ---
@@ -2980,22 +2985,32 @@ async function refreshAgentToolkitStatus() {
         disabledAttr = 'disabled';
         opacityStyle = 'opacity: 0.65;';
       } else if (stateItem.exists) {
-        badgeHTML = `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153);">Active</span>`;
+        badgeHTML = `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); border: 1px solid rgba(16, 185, 129, 0.25);">Active</span>`;
         checked = 'checked';
       } else {
-        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked">Not Present</span>`;
+        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(255, 255, 255, 0.05); color: var(--text-tertiary); border: 1px solid var(--border-subtle);">Not Present</span>`;
+      }
+
+      // Determine platform icon based on ID prefix/suffix
+      let platformIcon = '';
+      if (platform.id.includes('antigravity')) {
+        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: var(--accent-default); width: 16px; height: 16px;">${icons.antigravity}</span>`;
+      } else if (platform.id.includes('claude')) {
+        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #d97706; width: 16px; height: 16px;">${icons.claude}</span>`;
+      } else if (platform.id.includes('codex')) {
+        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #2563eb; width: 16px; height: 16px;">${icons.codex}</span>`;
+      } else if (platform.id.includes('opencode')) {
+        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #4b5563; width: 16px; height: 16px;">${icons.opencode}</span>`;
       }
 
       return `
-        <div class="symlink-item" style="margin-bottom: 8px; border-radius: var(--radius-md); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); ${opacityStyle}">
-          <label class="symlink-label" style="cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; width: 100%;">
-            <input type="checkbox" class="agent-toolkit-checkbox" data-id="${platform.id}" ${checked} ${disabledAttr} style="margin-right: 12px; cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'};" />
-            <div class="symlink-info" style="display: flex; flex-direction: column; gap: 2px;">
-              <span class="symlink-name" style="font-size: 13px; font-weight: 600; color: var(--text-default);">${platform.name}</span>
-              <span class="symlink-target-path" style="font-size: 11px; color: var(--text-tertiary);">${platform.description}</span>
-            </div>
+        <div class="symlink-item" style="margin-bottom: 8px; border-radius: var(--radius-md); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); ${opacityStyle}">
+          <label class="symlink-label" style="cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; gap: 8px; width: 100%;">
+            <input type="checkbox" class="agent-toolkit-checkbox" data-id="${platform.id}" ${checked} ${disabledAttr} style="margin-right: 4px; cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'};" />
+            ${platformIcon}
+            <span class="symlink-name" style="font-size: 13px; font-weight: 600; color: var(--text-default);">${platform.name}</span>
           </label>
-          <div style="display:flex; align-items:center; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-shrink: 0;">
             ${badgeHTML}
           </div>
         </div>
@@ -3010,15 +3025,14 @@ async function refreshAgentToolkitStatus() {
       : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
       
     const openspecHtml = `
-      <div class="symlink-item" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: 20px;">
+      <div style="display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); height: 100%;">
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
-              ${icons.agentToolkit}
+              ${icons.openspec}
             </div>
             <div class="symlink-info">
-              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">OpenSpec Configuration</span>
-              <span class="symlink-target-path" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Deploy OpenSpec core and agent-specific files.</span>
+              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">Open Spec</span>
             </div>
           </div>
           ${osCoreBadge}
@@ -3037,15 +3051,14 @@ async function refreshAgentToolkitStatus() {
       : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
 
     const bmadHtml = `
-      <div class="symlink-item" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: 20px;">
+      <div style="display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); height: 100%;">
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
-              ${icons.antigravity}
+              ${icons.bmad}
             </div>
             <div class="symlink-info">
-              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">BMAD Method Configuration</span>
-              <span class="symlink-target-path" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Deploy BMAD Method core and agent-specific files.</span>
+              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">BMAD METHOD</span>
             </div>
           </div>
           ${bmadCoreBadge}
@@ -3057,7 +3070,7 @@ async function refreshAgentToolkitStatus() {
     `;
 
     listContainer.innerHTML = `
-      <div class="symlink-list" style="max-height: none;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; width: 100%;">
         ${openspecHtml}
         ${bmadHtml}
       </div>

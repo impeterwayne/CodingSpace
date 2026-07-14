@@ -3203,18 +3203,32 @@ async function refreshAgentToolkitStatus() {
             showToast(`Deactivating ${comp.name}...`, 'info');
             
             // 1. Remove platform component itself
-            if (comp.isMulti) {
-              for (const f of comp.folders) {
-                await safeRemove(f.name, srcBase + '\\' + f.name);
+            let shouldRemovePlatform = true;
+            if (id === 'openspec_antigravity') {
+              const activeOpenSpecChecks = OPENSPEC_PLATFORMS.filter(p => {
+                if (p.id === id) return false;
+                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
+                return cb && cb.checked;
+              });
+              if (activeOpenSpecChecks.length > 0) {
+                shouldRemovePlatform = false;
               }
-            } else {
-              await safeRemove(comp.folderName, srcBase + '\\' + comp.folderName);
             }
-            await window.api.updateGitExclude({
-              worktreePath: activeWorktreePath,
-              patterns: comp.gitExcludePatterns,
-              action: 'remove'
-            });
+
+            if (shouldRemovePlatform) {
+              if (comp.isMulti) {
+                for (const f of comp.folders) {
+                  await safeRemove(f.name, srcBase + '\\' + f.name);
+                }
+              } else {
+                await safeRemove(comp.folderName, srcBase + '\\' + comp.folderName);
+              }
+              await window.api.updateGitExclude({
+                worktreePath: activeWorktreePath,
+                patterns: comp.gitExcludePatterns,
+                action: 'remove'
+              });
+            }
 
             // 2. Remove core and shared components if no longer needed
             if (id.startsWith('openspec_')) {

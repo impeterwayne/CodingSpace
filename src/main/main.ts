@@ -489,17 +489,56 @@ app.whenReady().then(() => {
   // Directory recursive copy helper
   function copyFolderSync(from, to) {
     if (!fs.existsSync(from)) return;
-    fs.mkdirSync(to, { recursive: true });
-    const entries = fs.readdirSync(from, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const srcPath = path.join(from, entry.name);
-      const destPath = path.join(to, entry.name);
-
-      if (entry.isDirectory()) {
+    const stat = fs.statSync(from);
+    if (stat.isDirectory()) {
+      fs.mkdirSync(to, { recursive: true });
+      const entries = fs.readdirSync(from, { withFileTypes: true });
+      for (const entry of entries) {
+        const srcPath = path.join(from, entry.name);
+        const destPath = path.join(to, entry.name);
         copyFolderSync(srcPath, destPath);
+      }
+    } else {
+      const parentDir = path.dirname(to);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      fs.copyFileSync(from, to);
+    }
+  }
+
+  // File/directory attribute reset helper for read-only files
+  function clearReadOnlyAttributes(targetPath) {
+    if (!fs.existsSync(targetPath)) return;
+    try {
+      const stat = fs.statSync(targetPath);
+      fs.chmodSync(targetPath, 0o666);
+      if (stat.isDirectory()) {
+        const items = fs.readdirSync(targetPath);
+        for (const item of items) {
+          clearReadOnlyAttributes(path.join(targetPath, item));
+        }
+      }
+    } catch (e) {
+      // Ignore errors resetting attributes
+    }
+  }
+
+  // Safe recursive remove helper
+  function safeRmSync(targetPath) {
+    if (!fs.existsSync(targetPath)) return;
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    } catch (err) {
+      if (err.code === 'EPERM' || err.code === 'EACCES') {
+        clearReadOnlyAttributes(targetPath);
+        try {
+          fs.rmSync(targetPath, { recursive: true, force: true });
+        } catch (retryErr) {
+          throw retryErr;
+        }
       } else {
-        fs.copyFileSync(srcPath, destPath);
+        throw err;
       }
     }
   }
@@ -540,7 +579,7 @@ app.whenReady().then(() => {
           const itemSrc = path.join(sourcePath, item);
           const itemDest = path.join(destPath, item);
           if (fs.existsSync(itemDest)) {
-            fs.rmSync(itemDest, { recursive: true, force: true });
+            safeRmSync(itemDest);
           }
           copyFolderSync(itemSrc, itemDest);
         }
@@ -549,7 +588,7 @@ app.whenReady().then(() => {
           fs.mkdirSync(path.dirname(destPath), { recursive: true });
         }
         if (fs.existsSync(destPath)) {
-          fs.rmSync(destPath, { recursive: true, force: true });
+          safeRmSync(destPath);
         }
         fs.copyFileSync(sourcePath, destPath);
       }
@@ -570,12 +609,12 @@ app.whenReady().then(() => {
             for (const item of items) {
               const itemDest = path.join(destPath, item);
               if (fs.existsSync(itemDest)) {
-                fs.rmSync(itemDest, { recursive: true, force: true });
+                safeRmSync(itemDest);
               }
             }
             try {
               if (fs.readdirSync(destPath).length === 0) {
-                fs.rmSync(destPath, { recursive: true, force: true });
+                safeRmSync(destPath);
               }
             } catch (e) {
               // Ignore failure to remove empty directory
@@ -583,12 +622,12 @@ app.whenReady().then(() => {
           }
         } else {
           if (fs.existsSync(destPath)) {
-            fs.rmSync(destPath, { recursive: true, force: true });
+            safeRmSync(destPath);
           }
         }
       } else {
         if (fs.existsSync(destPath)) {
-          fs.rmSync(destPath, { recursive: true, force: true });
+          safeRmSync(destPath);
         }
       }
       return { success: true };
@@ -714,7 +753,7 @@ app.whenReady().then(() => {
   ipcMain.handle('open-in-editor', (_, dirPath) => {
     try {
       const settings = workspaceService.getSettings();
-      const exe = settings.vscodePath || 'code';
+      const exe = settings.vscodePath || findVsCodeExecutable();
       const ext = path.extname(exe).toLowerCase();
       let spawnFile;
       let spawnArgs;
@@ -725,7 +764,8 @@ app.whenReady().then(() => {
         spawnFile = exe;
         spawnArgs = [dirPath];
       }
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
+      const useShell = !path.isAbsolute(exe);
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: useShell, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -742,18 +782,19 @@ app.whenReady().then(() => {
   ipcMain.handle('open-in-android-studio', (_, dirPath) => {
     try {
       const settings = workspaceService.getSettings();
-      const exe = settings.androidStudioPath || 'studio64';
+      const exe = settings.androidStudioPath || findAndroidStudioExecutable();
       const ext = path.extname(exe).toLowerCase();
       let spawnFile;
       let spawnArgs;
       if (ext === '.cmd' || ext === '.bat') {
         spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe, '.'];
+        spawnArgs = ['/d', '/c', exe, dirPath];
       } else {
         spawnFile = exe;
-        spawnArgs = ['.'];
+        spawnArgs = [dirPath];
       }
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: true, detached: true, stdio: 'ignore' });
+      const useShell = !path.isAbsolute(exe);
+      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: useShell, detached: true, stdio: 'ignore' });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -855,6 +896,48 @@ app.whenReady().then(() => {
       return resolveToolLaunch('antigravity').file;
     } catch (_) {
       return 'antigravity';
+    }
+  }
+
+  function findAndroidStudioExecutable() {
+    const possiblePaths = [
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    try {
+      return resolveToolLaunch('studio64').file;
+    } catch (_) {
+      return 'studio64';
+    }
+  }
+
+  function findVsCodeExecutable() {
+    const possiblePaths = [
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft VS Code', 'bin', 'code.cmd'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    try {
+      return resolveToolLaunch('code').file;
+    } catch (_) {
+      return 'code';
     }
   }
 

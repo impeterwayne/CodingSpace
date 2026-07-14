@@ -553,11 +553,33 @@ app.whenReady().then(() => {
     };
   });
 
-  ipcMain.handle('toolkit:check-status', (_, { worktreePath, name }) => {
+  ipcMain.handle('toolkit:check-status', (_, { worktreePath, name, sourcePath }) => {
     const targetPath = path.join(worktreePath, name);
     try {
-      const exists = fs.existsSync(targetPath);
-      return { exists };
+      if (sourcePath && fs.existsSync(sourcePath)) {
+        const stats = fs.statSync(sourcePath);
+        if (stats.isDirectory()) {
+          if (!fs.existsSync(targetPath)) {
+            return { exists: false };
+          }
+          const items = fs.readdirSync(sourcePath);
+          if (items.length === 0) {
+            return { exists: fs.existsSync(targetPath) };
+          }
+          for (const item of items) {
+            const itemDest = path.join(targetPath, item);
+            if (!fs.existsSync(itemDest)) {
+              return { exists: false };
+            }
+          }
+          return { exists: true };
+        } else {
+          return { exists: fs.existsSync(targetPath) };
+        }
+      } else {
+        const exists = fs.existsSync(targetPath);
+        return { exists };
+      }
     } catch (e) {
       return { exists: false };
     }

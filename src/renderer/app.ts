@@ -426,11 +426,11 @@ const icons = {
   chevron: iconSvg(iconRaw.chevron, 10),
   settings: iconSvg(iconRaw.settings, 12),
   close: iconSvg(iconRaw.close, 8),
-  opencode: iconSvg(iconRaw.opencode, 12),
+  get opencode() { return iconSvg(iconRaw.opencode, 12); },
   claude: iconSvg(iconRaw.claude, 12),
   'windows-terminal': iconSvg(iconRaw['windows-terminal'], 12),
   android: iconSvg(iconRaw.android, 12),
-  antigravity: iconSvg(iconRaw.antigravity, 12),
+  get antigravity() { return iconSvg(iconRaw.antigravity, 12); },
   moreVertical: iconSvg(iconRaw['more-vertical'], 12),
   copy: iconSvg(iconRaw.copy, 12),
   link: iconSvg(iconRaw.link, 12),
@@ -2781,18 +2781,15 @@ const TOOLKIT_COMPONENTS = [
     gitExcludePatterns: ['_bmad/', '_bmad-output/']
   },
   {
-    id: 'bmad_agent_skills',
-    name: 'BMAD Agent Skills',
-    folderName: '.agents\\skills',
-    description: 'Core BMAD agent skills.',
-    gitExcludePatterns: ['.agents/skills/bmad-*/']
-  },
-  {
     id: 'bmad_antigravity',
-    name: 'Antigravity CLI configuration',
-    folderName: '.antigravitycli',
-    description: 'Integrates local Antigravity settings and skill definitions.',
-    gitExcludePatterns: ['.antigravitycli/']
+    name: 'Antigravity BMAD Workflows',
+    isMulti: true,
+    folders: [
+      { name: '.agents\\skills', pattern: '.agents/skills/' },
+      { name: '.agents\\workflows', pattern: '.agents/workflows/' }
+    ],
+    description: 'Deploys BMAD shared skills and slash-command workflows.',
+    gitExcludePatterns: ['.agents/skills/bmad-*/', '.agents/workflows/bmad-*']
   },
   {
     id: 'bmad_claude',
@@ -2818,17 +2815,6 @@ const TOOLKIT_COMPONENTS = [
     ],
     description: 'OpenCode-specific skills and tools.',
     gitExcludePatterns: ['.opencode/skills/bmad-*/', '.opencode/commands/bmad-*/']
-  },
-  {
-    id: 'bmad_shared',
-    name: 'Shared Agent Skills & Workflows',
-    isMulti: true,
-    folders: [
-      { name: '.agent\\skills', pattern: '.agent/skills/' },
-      { name: '.agent\\workflows', pattern: '.agent/workflows/' }
-    ],
-    description: 'Shared agent workflow commands and shared custom skills.',
-    gitExcludePatterns: ['.agent/skills/bmad-*/', '.agent/workflows/bmad-*']
   }
 ];
 
@@ -2913,7 +2899,7 @@ async function refreshAgentToolkitStatus() {
     ];
 
     const BMAD_PLATFORMS = [
-      { id: 'bmad_antigravity', name: 'Antigravity', description: 'Deploys local Antigravity settings and skill definitions.' },
+      { id: 'bmad_antigravity', name: 'Antigravity', description: 'Deploys BMAD shared skills and slash-command workflows.' },
       { id: 'bmad_claude', name: 'Claude', description: 'Deploys Claude-specific skills and agent instructions.' },
       { id: 'bmad_codex', name: 'Codex', description: 'Deploys Codex-specific skills and custom Codex settings.' },
       { id: 'bmad_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
@@ -2943,7 +2929,8 @@ async function refreshAgentToolkitStatus() {
           try {
             const status = await window.api.checkToolkitStatus({
               worktreePath: activeWorktreePath,
-              name: f.name
+              name: f.name,
+              sourcePath: srcBase + '\\' + f.name
             });
             return status.exists;
           } catch (e) {
@@ -2955,9 +2942,42 @@ async function refreshAgentToolkitStatus() {
         try {
           const status = await window.api.checkToolkitStatus({
             worktreePath: activeWorktreePath,
-            name: comp.folderName
+            name: comp.folderName,
+            sourcePath: srcBase + '\\' + comp.folderName
           });
           exists = status.exists;
+        } catch (e) {
+          exists = false;
+        }
+      }
+
+      // If it's a BMAD platform component, also require that _bmad engine exists
+      if (exists && comp.id.startsWith('bmad_') && comp.id !== 'bmad_core') {
+        try {
+          const coreStatus = await window.api.checkToolkitStatus({
+            worktreePath: activeWorktreePath,
+            name: '_bmad',
+            sourcePath: bmadPath + '\\_bmad'
+          });
+          if (!coreStatus.exists) {
+            exists = false;
+          }
+        } catch (e) {
+          exists = false;
+        }
+      }
+
+      // If it's an OpenSpec platform component, also require that openspec core exists
+      if (exists && comp.id.startsWith('openspec_') && comp.id !== 'openspec_core') {
+        try {
+          const coreStatus = await window.api.checkToolkitStatus({
+            worktreePath: activeWorktreePath,
+            name: 'openspec',
+            sourcePath: openspecPath + '\\openspec'
+          });
+          if (!coreStatus.exists) {
+            exists = false;
+          }
         } catch (e) {
           exists = false;
         }
@@ -3178,10 +3198,10 @@ async function refreshAgentToolkitStatus() {
                 }
               }
 
-              // BMAD Shared
-              const sharedStatus = getStatus('bmad_shared');
+              // BMAD Shared (bmad_antigravity)
+              const sharedStatus = getStatus('bmad_antigravity');
               if (!sharedStatus.exists) {
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_shared');
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_antigravity');
                 if (sharedComp) {
                   for (const f of sharedComp.folders) {
                     await safeDeploy(f.name, bmadPath + '\\' + f.name);
@@ -3191,22 +3211,6 @@ async function refreshAgentToolkitStatus() {
                     patterns: sharedComp.gitExcludePatterns,
                     action: 'add'
                   });
-                }
-              }
-
-              // BMAD Agent Skills (for Antigravity and Claude)
-              if (id === 'bmad_antigravity' || id === 'bmad_claude') {
-                const skillsStatus = getStatus('bmad_agent_skills');
-                if (!skillsStatus.exists) {
-                  const skillsComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_agent_skills');
-                  if (skillsComp) {
-                    await safeDeploy(skillsComp.folderName, bmadPath + '\\' + skillsComp.folderName);
-                    await window.api.updateGitExclude({
-                      worktreePath: activeWorktreePath,
-                      patterns: skillsComp.gitExcludePatterns,
-                      action: 'add'
-                    });
-                  }
                 }
               }
             }
@@ -3224,6 +3228,15 @@ async function refreshAgentToolkitStatus() {
                 return cb && cb.checked;
               });
               if (activeOpenSpecChecks.length > 0) {
+                shouldRemovePlatform = false;
+              }
+            } else if (id === 'bmad_antigravity') {
+              const activeBmadChecks = BMAD_PLATFORMS.filter(p => {
+                if (p.id === id) return false;
+                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
+                return cb && cb.checked;
+              });
+              if (activeBmadChecks.length > 0) {
                 shouldRemovePlatform = false;
               }
             }
@@ -3293,8 +3306,8 @@ async function refreshAgentToolkitStatus() {
                     action: 'remove'
                   });
                 }
-                // Remove BMAD Shared
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_shared');
+                // Remove BMAD Shared (bmad_antigravity)
+                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_antigravity');
                 if (sharedComp) {
                   for (const f of sharedComp.folders) {
                     await safeRemove(f.name, bmadPath + '\\' + f.name);
@@ -3302,22 +3315,6 @@ async function refreshAgentToolkitStatus() {
                   await window.api.updateGitExclude({
                     worktreePath: activeWorktreePath,
                     patterns: sharedComp.gitExcludePatterns,
-                    action: 'remove'
-                  });
-                }
-              }
-
-              // Deactivate bmad_agent_skills if both bmad_antigravity and bmad_claude are unchecked
-              const isAntigravityActive = id === 'bmad_antigravity' ? false : (listContainer.querySelector(`.agent-toolkit-checkbox[data-id="bmad_antigravity"]`)?.checked || false);
-              const isClaudeActive = id === 'bmad_claude' ? false : (listContainer.querySelector(`.agent-toolkit-checkbox[data-id="bmad_claude"]`)?.checked || false);
-              
-              if (!isAntigravityActive && !isClaudeActive) {
-                const skillsComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_agent_skills');
-                if (skillsComp) {
-                  await safeRemove(skillsComp.folderName, bmadPath + '\\' + skillsComp.folderName);
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: skillsComp.gitExcludePatterns,
                     action: 'remove'
                   });
                 }

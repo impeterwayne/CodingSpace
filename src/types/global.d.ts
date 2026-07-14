@@ -100,7 +100,7 @@ declare global {
       updateGitExclude: (opts: { worktreePath: string; patterns: string[]; action: 'add' | 'remove' }) => Promise<any>;
       createDirectory: (path: string) => Promise<any>;
       pathExists: (path: string) => Promise<boolean>;
-      checkToolkitStatus: (opts: { worktreePath: string; name: string }) => Promise<{ exists: boolean }>;
+      checkToolkitStatus: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ exists: boolean }>;
       deployToolkit: (opts: { worktreePath: string; name: string; sourcePath: string }) => Promise<{ success: boolean; error?: string }>;
       removeToolkit: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ success: boolean; error?: string }>;
       getDefaultToolkitSources: () => Promise<{ openspecPath: string; bmadPath: string }>;

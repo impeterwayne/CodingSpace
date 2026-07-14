@@ -734,14 +734,7 @@ body {
   height: 18px;
   justify-content: center;
 }
-.terminal-tab-icon.antigravity-icon svg path,
-.tab-dropdown-icon.antigravity-icon svg path {
-  fill: currentColor !important;
-}
-.terminal-tab-icon.antigravity-icon svg g,
-.tab-dropdown-icon.antigravity-icon svg g {
-  filter: none !important;
-}
+
 .terminal-tab-name {
   flex: 1;
   min-width: 0;

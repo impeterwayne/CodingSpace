@@ -11,6 +11,9 @@ import {
   formatPriority,
   PlaneIssue,
   PlaneState,
+  EvidenceMedia,
+  scrapeLightshotImageURL,
+  scrapeStreamableMediaURLs,
 } from './services/planeService';
 
 const { Terminal } = require('@xterm/xterm');
@@ -3725,7 +3728,7 @@ function openExportPlaneTasksModal() {
       </div>
 
       <div id="export-section-summary" style="padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
-        <strong>Target File:</strong> <code>PLANE_TASK_LIST.md</code> <br />
+        <strong>Target File:</strong> <code>plane/TASK_LIST.md</code> <br />
         <span id="export-task-count-text">0 tasks will be exported.</span>
       </div>
     </div>
@@ -3733,6 +3736,9 @@ function openExportPlaneTasksModal() {
 
   dom.modalTitle.textContent = '📥 Export Task List Options';
   dom.modalBody.innerHTML = modalBodyHTML;
+  if (dom.modal) {
+    dom.modal.classList.add('export-modal');
+  }
   showModal();
 
   const getCheckedCategories = (): Set<string> => {
@@ -3769,55 +3775,233 @@ function openExportPlaneTasksModal() {
 
   updateModalSummary();
 
-  configureModalFooter([
-    {
-      label: 'Cancel',
-      class: 'btn-secondary',
-      onClick: () => hideModal(),
-    },
-    {
-      label: '🚀 Export Markdown',
-      class: 'btn-primary',
-      onClick: async () => {
-        const checked = getCheckedCategories();
-        if (checked.size === 0) {
-          showToast('Please select at least one section to export!', 'warning');
-          return;
+  const footer = configureModalFooter([
+    { id: 'export-btn-cancel', label: 'Cancel', kind: 'secondary' },
+    { id: 'export-btn-submit', label: '🚀 Export', kind: 'primary' },
+  ]);
+
+  if (footer['export-btn-cancel']) {
+    footer['export-btn-cancel'].addEventListener('click', () => hideModal());
+  }
+
+  if (footer['export-btn-submit']) {
+    footer['export-btn-submit'].addEventListener('click', async () => {
+      const checked = getCheckedCategories();
+      if (checked.size === 0) {
+        showToast('Please select at least one section to export!', 'warning');
+        return;
+      }
+
+      const currentCategorized = categorizeIssues(planeTasksStore.rawIssues, planeTasksStore.stateMap);
+      const filteredForExport: PlaneIssue[] = [];
+      if (checked.has('backlog')) filteredForExport.push(...currentCategorized.backlog);
+      if (checked.has('todo')) filteredForExport.push(...currentCategorized.todo);
+      if (checked.has('in_progress')) filteredForExport.push(...currentCategorized.inProgress);
+      if (checked.has('done')) filteredForExport.push(...currentCategorized.done);
+      if (checked.has('cancelled')) filteredForExport.push(...currentCategorized.cancelled);
+      if (checked.has('other')) filteredForExport.push(...currentCategorized.other);
+
+      // Transition modal into Export Progress Console UI
+      dom.modalBody.innerHTML = `
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+          Exporting <strong>${filteredForExport.length} tasks</strong> & downloading evidence media to <code>plane/TASK_LIST.md</code>...
+        </div>
+        <div class="export-progress-container">
+          <div class="export-progress-status-row">
+            <span id="export-status-label">Initializing Plane Export...</span>
+            <span id="export-percent-label">0%</span>
+          </div>
+          <div class="export-progress-bar-track">
+            <div id="export-progress-bar" class="export-progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div id="export-log-terminal" class="export-log-terminal"></div>
+        </div>
+      `;
+
+      const progressFooter = configureModalFooter([
+        { id: 'export-btn-running', label: 'Exporting & Downloading...', kind: 'secondary' },
+      ]);
+      if (progressFooter['export-btn-running']) {
+        (progressFooter['export-btn-running'] as HTMLButtonElement).disabled = true;
+      }
+
+      const statusLabel = dom.modalBody.querySelector('#export-status-label');
+      const percentLabel = dom.modalBody.querySelector('#export-percent-label');
+      const progressBar = dom.modalBody.querySelector('#export-progress-bar') as HTMLElement;
+      const logTerminal = dom.modalBody.querySelector('#export-log-terminal') as HTMLElement;
+
+      const appendLog = async (msg: string, level: 'info' | 'screenshot' | 'video' | 'cache' | 'success' | 'error' = 'info', percent?: number) => {
+        if (percent !== undefined) {
+          const pct = Math.min(100, Math.max(0, percent));
+          if (percentLabel) percentLabel.textContent = `${Math.round(pct)}%`;
+          if (progressBar) progressBar.style.width = `${pct}%`;
+        }
+        if (statusLabel) statusLabel.textContent = msg;
+
+        if (logTerminal) {
+          const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
+          const entry = document.createElement('div');
+          entry.className = `export-log-entry ${level}`;
+          entry.innerHTML = `<span style="opacity: 0.5;">[${timeStr}]</span> ${msg}`;
+          logTerminal.appendChild(entry);
+          logTerminal.scrollTop = logTerminal.scrollHeight;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      };
+
+      try {
+        await appendLog('🚀 Initializing plane/ export directory structure...', 'info', 5);
+        await new Promise((r) => setTimeout(r, 100));
+
+        await appendLog('🙈 Excluding plane/ directory in .git/info/exclude...', 'info', 8);
+        try {
+          await window.api.updateGitExclude({
+            worktreePath: activeWorktreePath,
+            patterns: ['plane/', 'plane/*'],
+            action: 'add',
+          });
+        } catch (e) {
+          // Ignore git exclude errors
         }
 
-        const currentCategorized = categorizeIssues(planeTasksStore.rawIssues, planeTasksStore.stateMap);
-        const filteredForExport: PlaneIssue[] = [];
-        if (checked.has('backlog')) filteredForExport.push(...currentCategorized.backlog);
-        if (checked.has('todo')) filteredForExport.push(...currentCategorized.todo);
-        if (checked.has('in_progress')) filteredForExport.push(...currentCategorized.inProgress);
-        if (checked.has('done')) filteredForExport.push(...currentCategorized.done);
-        if (checked.has('cancelled')) filteredForExport.push(...currentCategorized.cancelled);
-        if (checked.has('other')) filteredForExport.push(...currentCategorized.other);
+        await appendLog('📁 Saving plane/raw/ metadata backups...', 'info', 10);
+        const rawIssuesJSON = JSON.stringify(planeTasksStore.rawIssues, null, 2);
+        const rawStatesJSON = JSON.stringify(Array.from(planeTasksStore.stateMap.values()), null, 2);
+        
+        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/raw/issues.json', content: rawIssuesJSON });
+        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/raw/states.json', content: rawStatesJSON });
 
-        showToast('Generating PLANE_TASK_LIST.md...', 'info');
+        await appendLog('🔍 Parsing and downloading evidence media (prnt.sc screenshots & Streamable MP4 videos)...', 'info', 15);
+
+        const mediaMap = new Map<number, EvidenceMedia[]>();
+        let screenshotCount = 0;
+        let videoCount = 0;
+
+        for (let i = 0; i < filteredForExport.length; i++) {
+          const task = filteredForExport[i];
+          const desc = task.description_html || '';
+          const taskID = `PDFFILLSIG-${task.sequence_id}`;
+          const taskMediaList: EvidenceMedia[] = [];
+
+          // 1. Parse & Download Lightshot screenshots
+          const prntMatches = desc.match(/https?:\/\/prnt\.sc\/([a-zA-Z0-9_-]+)/g);
+          if (prntMatches) {
+            for (const webUrl of prntMatches) {
+              const mediaId = webUrl.split('/').pop()!;
+              if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
+
+              const targetFilePath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}.png`;
+              const relLocalPath = `./evidence/${taskID}/${mediaId}.png`;
+
+              await appendLog(`📸 Fetching Lightshot screenshot for ${taskID}: ${mediaId}...`, 'screenshot');
+              
+              const imgUrl = await scrapeLightshotImageURL(webUrl);
+              if (imgUrl) {
+                const dlRes = await window.api.downloadFile({ url: imgUrl, targetFilePath });
+                if (dlRes?.success) {
+                  if (dlRes.cached) {
+                    await appendLog(`⚡ Cached screenshot: ${mediaId}.png`, 'cache');
+                  } else {
+                    await appendLog(`✅ Downloaded screenshot: ${mediaId}.png`, 'success');
+                  }
+                  taskMediaList.push({
+                    type: 'image',
+                    webUrl,
+                    mediaId,
+                    localPath: relLocalPath,
+                  });
+                  screenshotCount++;
+                }
+              }
+            }
+          }
+
+          // 2. Parse & Download Streamable MP4 videos
+          const streamableMatches = desc.match(/https?:\/\/streamable\.com\/([a-zA-Z0-9_-]+)/g);
+          if (streamableMatches) {
+            for (const webUrl of streamableMatches) {
+              const mediaId = webUrl.split('/').pop()!;
+              if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
+
+              const targetVideoPath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}.mp4`;
+              const targetPosterPath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}_poster.jpg`;
+              const relVideoPath = `./evidence/${taskID}/${mediaId}.mp4`;
+              const relPosterPath = `./evidence/${taskID}/${mediaId}_poster.jpg`;
+
+              await appendLog(`🎥 Fetching Streamable full MP4 video for ${taskID}: ${mediaId}...`, 'video');
+
+              const { videoUrl, posterUrl } = await scrapeStreamableMediaURLs(mediaId, webUrl);
+              if (posterUrl) {
+                await window.api.downloadFile({ url: posterUrl, targetFilePath: targetPosterPath });
+              }
+
+              if (videoUrl) {
+                const dlRes = await window.api.downloadFile({ url: videoUrl, targetFilePath: targetVideoPath });
+                if (dlRes?.success) {
+                  if (dlRes.cached) {
+                    await appendLog(`⚡ Cached full video: ${mediaId}.mp4`, 'cache');
+                  } else {
+                    await appendLog(`✅ Downloaded full MP4 video: ${mediaId}.mp4`, 'success');
+                  }
+                  taskMediaList.push({
+                    type: 'video',
+                    webUrl,
+                    mediaId,
+                    localPath: relVideoPath,
+                    posterPath: relPosterPath,
+                  });
+                  videoCount++;
+                }
+              }
+            }
+          }
+
+          if (taskMediaList.length > 0) {
+            mediaMap.set(task.sequence_id, taskMediaList);
+          }
+
+          const progressPct = 15 + Math.round(((i + 1) / filteredForExport.length) * 70);
+          if ((i + 1) % 2 === 0 || i === filteredForExport.length - 1) {
+            await appendLog(`Processed evidence for ${i + 1}/${filteredForExport.length} tasks...`, 'info', progressPct);
+          }
+        }
+
+        await appendLog(`Download summary: ${screenshotCount} screenshot(s), ${videoCount} full MP4 video(s).`, 'info', 88);
+        await appendLog('📝 Generating comprehensive Markdown task checklist...', 'info', 92);
 
         const cfg = getPlaneConfigForActiveProject();
-        const mdContent = generateTaskListMD(
-          cfg,
-          filteredForExport,
-          planeTasksStore.stateMap
-        );
+        const mdContent = generateTaskListMD(cfg, filteredForExport, planeTasksStore.stateMap, mediaMap);
 
-        const res = await window.api.writeProjectFile({
-          worktreePath: activeWorktreePath,
-          filename: 'PLANE_TASK_LIST.md',
-          content: mdContent,
-        });
+        await appendLog('💾 Writing plane/TASK_LIST.md...', 'info', 96);
+        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/TASK_LIST.md', content: mdContent });
 
-        if (res?.success) {
-          showToast(`Exported PLANE_TASK_LIST.md to ${activeWorktreePath}`, 'success');
-          hideModal();
-        } else {
-          showToast(`Export failed: ${res?.error || 'Unknown error'}`, 'error');
+        await appendLog('🎉 SUCCESS! All tasks & offline media references written to plane/TASK_LIST.md', 'success', 100);
+
+        const doneFooter = configureModalFooter([
+          { id: 'export-btn-open-dir', label: '📁 Open plane/ Folder', kind: 'secondary' },
+          { id: 'export-btn-done', label: 'Done', kind: 'primary' },
+        ]);
+        if (doneFooter['export-btn-open-dir']) {
+          doneFooter['export-btn-open-dir'].addEventListener('click', () => {
+            if (activeWorktreePath) {
+              window.api.openInExplorer(`${activeWorktreePath}\\plane`);
+            }
+          });
         }
-      },
-    },
-  ]);
+        if (doneFooter['export-btn-done']) {
+          doneFooter['export-btn-done'].addEventListener('click', () => hideModal());
+        }
+      } catch (err: any) {
+        await appendLog(`❌ Export Error: ${err?.message || String(err)}`, 'error', 100);
+        const errFooter = configureModalFooter([
+          { id: 'export-btn-close', label: 'Close', kind: 'secondary' },
+        ]);
+        if (errFooter['export-btn-close']) {
+          errFooter['export-btn-close'].addEventListener('click', () => hideModal());
+        }
+      }
+    });
+  }
 }
 
 // ── Bind Plane Task Management Listeners ────────────────────

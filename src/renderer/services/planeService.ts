@@ -26,12 +26,22 @@ export interface PlaneConfig {
   apiKey: string;
 }
 
+export interface EvidenceMedia {
+  type: 'image' | 'video';
+  webUrl: string;
+  mediaId: string;
+  localPath: string;
+  posterPath?: string;
+}
+
 export const DEFAULT_PLANE_CONFIG: PlaneConfig = {
   baseUrl: 'https://plane.itgproduct.com',
   workspaceSlug: 'product',
   projectId: '',
   apiKey: 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
 };
+
+const USER_AGENT_HEADER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export async function fetchProjectStates(cfg: PlaneConfig): Promise<Map<string, PlaneState>> {
   const url = `${cfg.baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${cfg.workspaceSlug}/projects/${cfg.projectId}/states/`;
@@ -115,6 +125,67 @@ export function formatDate(dateStr?: string): string {
   return dateStr;
 }
 
+export async function scrapeLightshotImageURL(prntUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(prntUrl, {
+      headers: { 'User-Agent': USER_AGENT_HEADER },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const ogMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+    if (ogMatch && ogMatch[1]) return ogMatch[1];
+
+    const imgMatch = html.match(/id=["']screenshot-image["']\s+src=["']([^"']+)["']/i);
+    if (imgMatch && imgMatch[1]) return imgMatch[1];
+  } catch (e) {
+    // Ignore fetch errors
+  }
+  return null;
+}
+
+export async function scrapeStreamableMediaURLs(mediaId: string, streamableUrl: string): Promise<{ videoUrl: string | null; posterUrl: string | null }> {
+  try {
+    const apiRes = await fetch(`https://api.streamable.com/videos/${mediaId}`, {
+      headers: { 'User-Agent': USER_AGENT_HEADER },
+    });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      let videoUrl: string | null = null;
+      let posterUrl: string | null = null;
+
+      if (data.thumbnail_url) {
+        posterUrl = data.thumbnail_url.startsWith('//') ? 'https:' + data.thumbnail_url : data.thumbnail_url;
+      }
+      if (data.files && data.files.mp4 && data.files.mp4.url) {
+        const u = data.files.mp4.url;
+        videoUrl = u.startsWith('//') ? 'https:' + u : u;
+      }
+      if (videoUrl) return { videoUrl, posterUrl };
+    }
+
+    const htmlRes = await fetch(streamableUrl, {
+      headers: { 'User-Agent': USER_AGENT_HEADER },
+    });
+    if (htmlRes.ok) {
+      const html = await htmlRes.text();
+      let videoUrl: string | null = null;
+      let posterUrl: string | null = null;
+
+      const videoMatch = html.match(/<meta\s+property=["']og:video:secure_url["']\s+content=["']([^"']+)["']/i);
+      if (videoMatch && videoMatch[1]) videoUrl = videoMatch[1];
+
+      const imageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+      if (imageMatch && imageMatch[1]) posterUrl = imageMatch[1];
+
+      return { videoUrl, posterUrl };
+    }
+  } catch (e) {
+    // Ignore fetch errors
+  }
+  return { videoUrl: null, posterUrl: null };
+}
+
 export function categorizeIssues(issues: PlaneIssue[], stateMap: Map<string, PlaneState>) {
   const backlog: PlaneIssue[] = [];
   const todo: PlaneIssue[] = [];
@@ -154,7 +225,7 @@ export function categorizeIssues(issues: PlaneIssue[], stateMap: Map<string, Pla
   return { backlog, todo, inProgress, done, cancelled, other };
 }
 
-export function generateTaskListMD(cfg: PlaneConfig, issues: PlaneIssue[], stateMap: Map<string, PlaneState>): string {
+export function generateTaskListMD(cfg: PlaneConfig, issues: PlaneIssue[], stateMap: Map<string, PlaneState>, mediaMap?: Map<number, EvidenceMedia[]>): string {
   const { backlog, todo, inProgress, done, cancelled, other } = categorizeIssues(issues, stateMap);
   const totalCount = issues.length;
   const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -178,76 +249,66 @@ export function generateTaskListMD(cfg: PlaneConfig, issues: PlaneIssue[], state
   }
   md += `| **TOTAL** | **${totalCount}** | ✨ |\n\n`;
 
+  const formatItem = (checkbox: string, item: PlaneIssue) => {
+    let itemMd = `- [${checkbox}] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
+    itemMd += `  - **Priority:** ${formatPriority(item.priority)} | **Start Date:** \`${formatDate(item.start_date)}\``;
+    if (item.updated_at) {
+      itemMd += ` | **Last Updated:** \`${formatDate(item.updated_at)}\``;
+    }
+    itemMd += `\n`;
+    const desc = cleanHTML(item.description_html);
+    if (desc) itemMd += `  - **Details/Evidence:** ${desc}\n`;
+
+    const mediaList = mediaMap?.get(item.sequence_id);
+    if (mediaList && mediaList.length > 0) {
+      itemMd += `  - **Downloaded Offline Evidence:**\n`;
+      for (const m of mediaList) {
+        if (m.type === 'image') {
+          itemMd += `    - Screenshot: [${m.mediaId}](${m.webUrl}) → ![Preview](${m.localPath})\n`;
+        } else if (m.type === 'video') {
+          itemMd += `    - Video Recording: [${m.mediaId}](${m.webUrl}) → [Full MP4 Video](${m.localPath})\n`;
+          itemMd += `      <video controls src="${m.localPath}" poster="${m.posterPath || ''}" width="480"></video>\n`;
+        }
+      }
+    }
+    itemMd += `\n`;
+    return itemMd;
+  };
+
   // 1. Backlog
   if (backlog.length > 0) {
     md += `--- \n\n## 🔴 1. Backlog Tasks (${backlog.length})\n\n`;
-    for (const item of backlog) {
-      md += `- [ ] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)} | **Start Date:** \`${formatDate(item.start_date)}\`\n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of backlog) md += formatItem(' ', item);
   }
 
   // 2. Todo
   if (todo.length > 0) {
     md += `--- \n\n## 🟡 2. Todo Tasks (${todo.length})\n\n`;
-    for (const item of todo) {
-      md += `- [ ] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)} | **Start Date:** \`${formatDate(item.start_date)}\`\n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of todo) md += formatItem(' ', item);
   }
 
   // 3. In Progress
   if (inProgress.length > 0) {
     md += `--- \n\n## 🔵 3. In Progress Tasks (${inProgress.length})\n\n`;
-    for (const item of inProgress) {
-      md += `- [/] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)} | **Start Date:** \`${formatDate(item.start_date)}\` | **Last Updated:** \`${formatDate(item.updated_at)}\` \n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of inProgress) md += formatItem('/', item);
   }
 
   // 4. Done
   if (done.length > 0) {
     md += `--- \n\n## 🟢 4. Done Tasks (${done.length})\n\n`;
-    for (const item of done) {
-      md += `- [x] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)} | **Completed At:** \`${formatDate(item.updated_at)}\`\n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of done) md += formatItem('x', item);
   }
 
   // 5. Cancelled
   if (cancelled.length > 0) {
     md += `--- \n\n## ⚪ 5. Cancelled Tasks (${cancelled.length})\n\n`;
-    for (const item of cancelled) {
-      md += `- [ ] ~**PDFFILLSIG-${item.sequence_id}**: ${item.name}~\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)}\n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of cancelled) md += formatItem(' ', item);
   }
 
   // 6. Other / Draft
   if (other.length > 0) {
     md += `--- \n\n## ❓ 6. Other / Draft Tasks (${other.length})\n\n`;
-    for (const item of other) {
-      md += `- [ ] **PDFFILLSIG-${item.sequence_id}**: ${item.name} (State: ${item.stateName})\n`;
-      md += `  - **Priority:** ${formatPriority(item.priority)}\n`;
-      const desc = cleanHTML(item.description_html);
-      if (desc) md += `  - **Details/Evidence:** ${desc}\n`;
-      md += `\n`;
-    }
+    for (const item of other) md += formatItem(' ', item);
   }
 
   md += `---\n*Comprehensive task list generated automatically via TypeScript REST API client.*`;

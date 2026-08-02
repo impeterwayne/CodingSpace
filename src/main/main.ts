@@ -492,9 +492,42 @@ app.whenReady().then(() => {
         throw new Error('Worktree path and filename are required.');
       }
       const targetFilePath = path.join(worktreePath, filename);
+      const parentDir = path.dirname(targetFilePath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
       fs.writeFileSync(targetFilePath, content, 'utf-8');
       return { success: true, filePath: targetFilePath };
     } catch (err) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('project:download-file', async (_, { url, targetFilePath }) => {
+    try {
+      if (!url || !targetFilePath) {
+        throw new Error('URL and targetFilePath are required.');
+      }
+      if (fs.existsSync(targetFilePath) && fs.statSync(targetFilePath).size > 0) {
+        return { success: true, cached: true, filePath: targetFilePath };
+      }
+      const parentDir = path.dirname(targetFilePath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} (${response.statusText})`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(targetFilePath, buffer);
+      return { success: true, cached: false, filePath: targetFilePath };
+    } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }
   });

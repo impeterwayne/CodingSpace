@@ -79,5 +79,6 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Project File Operations ──
   writeProjectFile: (opts) => ipcRenderer.invoke('project:write-file', opts),
+  downloadFile: (opts) => ipcRenderer.invoke('project:download-file', opts),
 });
 

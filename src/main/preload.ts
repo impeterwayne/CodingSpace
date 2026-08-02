@@ -76,5 +76,8 @@ contextBridge.exposeInMainWorld('api', {
   deployToolkit: (opts) => ipcRenderer.invoke('toolkit:deploy', opts),
   removeToolkit: (opts) => ipcRenderer.invoke('toolkit:remove', opts),
   getDefaultToolkitSources: () => ipcRenderer.invoke('toolkit:get-default-sources'),
+
+  // ── Project File Operations ──
+  writeProjectFile: (opts) => ipcRenderer.invoke('project:write-file', opts),
 });
 

@@ -21,6 +21,10 @@ function normalizeSettings(settings) {
     bmadSourcePath: typeof nextSettings.bmadSourcePath === 'string' ? nextSettings.bmadSourcePath.trim() : '',
     autoRefreshCurrentProject: typeof nextSettings.autoRefreshCurrentProject === 'boolean' ? nextSettings.autoRefreshCurrentProject : true,
     autoRefreshInterval: typeof nextSettings.autoRefreshInterval === 'number' && nextSettings.autoRefreshInterval >= 1 ? nextSettings.autoRefreshInterval : 10,
+    planeApiKey: typeof nextSettings.planeApiKey === 'string' && nextSettings.planeApiKey.trim() ? nextSettings.planeApiKey.trim() : 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+    planeBaseUrl: typeof nextSettings.planeBaseUrl === 'string' && nextSettings.planeBaseUrl.trim() ? nextSettings.planeBaseUrl.trim() : 'https://plane.itgproduct.com',
+    planeWorkspaceSlug: typeof nextSettings.planeWorkspaceSlug === 'string' && nextSettings.planeWorkspaceSlug.trim() ? nextSettings.planeWorkspaceSlug.trim() : 'product',
+    projectPlaneIds: nextSettings.projectPlaneIds && typeof nextSettings.projectPlaneIds === 'object' ? nextSettings.projectPlaneIds : {},
     symlinkTargets: Array.isArray(nextSettings.symlinkTargets)
       ? nextSettings.symlinkTargets
           .filter(t => t && typeof t === 'object' && typeof t.name === 'string' && typeof t.targetPath === 'string')

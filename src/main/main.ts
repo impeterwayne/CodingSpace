@@ -486,6 +486,19 @@ app.whenReady().then(() => {
     return fs.existsSync(targetPath);
   });
 
+  ipcMain.handle('project:write-file', (_, { worktreePath, filename, content }) => {
+    try {
+      if (!worktreePath || !filename) {
+        throw new Error('Worktree path and filename are required.');
+      }
+      const targetFilePath = path.join(worktreePath, filename);
+      fs.writeFileSync(targetFilePath, content, 'utf-8');
+      return { success: true, filePath: targetFilePath };
+    } catch (err) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
   // Directory recursive copy helper
   function copyFolderSync(from, to) {
     if (!fs.existsSync(from)) return;

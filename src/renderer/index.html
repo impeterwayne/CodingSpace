@@ -105,10 +105,9 @@
 
         </div>
       </div>
-    </main>
 
-    <!-- ═══ Center — Settings Screen (Stub) ═══ -->
-    <main id="settings-screen" class="hidden">
+      <!-- ═══ Center — Settings Screen (Stub) ═══ -->
+      <div id="settings-screen" class="hidden">
       <div class="settings-container">
         <header class="settings-header">
           <div class="settings-title-group">
@@ -199,117 +198,265 @@
             </div>
           </div>
 
-
+          <!-- Plane Integration Card (Global) -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">
+                <img src="icons/task.svg" width="16" height="16" alt="" />
+              </div>
+              <h3 class="settings-card-title">Plane Integration (Global)</h3>
+            </div>
+            <div class="settings-card-body">
+              <div class="form-group-col">
+                <label class="form-label">Plane API Key</label>
+                <input type="password" id="settings-plane-api-key" class="settings-input" placeholder="plane_api_..." autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="form-group-col">
+                <label class="form-label">Plane Base URL</label>
+                <input type="text" id="settings-plane-base-url" class="settings-input" placeholder="https://plane.itgproduct.com" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="form-group-col">
+                <label class="form-label">Default Workspace Slug</label>
+                <input type="text" id="settings-plane-workspace-slug" class="settings-input" placeholder="product" autocomplete="off" spellcheck="false" />
+              </div>
+            </div>
+          </div>
 
         </div>
       </div>
-    </main>
+      </div>
 
-    <!-- ═══ Center — Symlink Screen ═══ -->
-    <main id="symlink-screen" class="hidden">
-      <div class="settings-container">
-        <header class="settings-header">
-          <div class="settings-title-group">
-            <h2 class="settings-title">Manage Symlinks</h2>
-            <p class="settings-subtitle">Manage and toggle folder symlinks for your current project.</p>
+      <!-- ═══ Center — Symlink Screen ═══ -->
+      <div id="symlink-screen" class="hidden">
+        <div class="settings-container">
+          <header class="settings-header">
+            <div class="settings-title-group">
+              <h2 class="settings-title">Manage Symlinks</h2>
+              <p class="settings-subtitle">Manage and toggle folder symlinks for your current project.</p>
+            </div>
+            <button type="button" class="btn-close-settings" id="btn-close-symlink-screen" title="Close symlinks" aria-label="Close symlinks">
+              <img src="icons/close.svg" width="16" height="16" alt="" />
+            </button>
+          </header>
+
+          <div class="symlink-screen-top-row" style="display: flex; gap: 20px; align-items: stretch; margin-bottom: 20px; flex-wrap: wrap; width: 100%;">
+            <div class="settings-card" style="flex: 1; min-width: 280px; margin: 0; padding: 24px;">
+              <div class="settings-card-header">
+                <div class="settings-card-icon">
+                  <img src="icons/folder.svg" width="16" height="16" alt="" />
+                </div>
+                <h3 class="settings-card-title">Active Worktree Target</h3>
+              </div>
+              <div style="margin-top: 12px;">
+                <div class="symlink-name" id="symlink-screen-active-name" style="font-size: 16px; font-weight: 600; color: var(--text-default);">No active project</div>
+                <div id="symlink-screen-active-path" style="font-size: 12px; color: var(--text-secondary); word-break: break-all; font-family: var(--font-mono); margin-top: 2px;">Please select a worktree first.</div>
+              </div>
+            </div>
+
+            <div class="settings-card" style="flex: 2; min-width: 320px; margin: 0; padding: 24px;">
+              <div class="settings-card-header">
+                <div class="settings-card-icon">
+                  <img src="icons/plus.svg" width="16" height="16" alt="" />
+                </div>
+                <h3 class="settings-card-title">Add Symlink Target</h3>
+              </div>
+              <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
+                <div class="form-group-col">
+                  <label class="form-label">Folder Path (Absolute)</label>
+                  <div class="input-browse-group">
+                    <input type="text" id="symlink-screen-new-path" class="settings-input" placeholder="C:\path\to\target\folder" autocomplete="off" spellcheck="false" />
+                    <button type="button" class="btn-browse" id="btn-browse-symlink-screen-folder" title="Browse target folder">Browse</button>
+                  </div>
+                </div>
+                <div class="form-group-col" id="symlink-screen-name-group">
+                  <label class="form-label">Link Folder Name inside Project (Optional)</label>
+                  <input type="text" id="symlink-screen-new-name" class="settings-input" placeholder="Default: same name as folder" autocomplete="off" spellcheck="false" />
+                </div>
+                <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+                  <button type="button" class="btn-primary" id="btn-symlink-screen-add" style="padding: 8px 16px;">Create Symlink</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <button type="button" class="btn-close-settings" id="btn-close-symlink-screen" title="Close symlinks" aria-label="Close symlinks">
-            <img src="icons/close.svg" width="16" height="16" alt="" />
-          </button>
-        </header>
 
-        <div class="symlink-screen-top-row" style="display: flex; gap: 20px; align-items: stretch; margin-bottom: 20px; flex-wrap: wrap; width: 100%;">
-          <!-- Active Worktree Box (1/3 width) -->
-          <div style="flex: 1; min-width: 250px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column; gap: 6px; justify-content: center;">
-            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Active Worktree</div>
-            <div class="symlink-name" id="symlink-screen-active-name" style="font-size: 16px; font-weight: 600; color: var(--text-default);">No active project</div>
-            <div id="symlink-screen-active-path" style="font-size: 12px; color: var(--text-secondary); word-break: break-all; font-family: var(--font-mono); margin-top: 2px;">Please select a worktree first.</div>
-          </div>
-
-          <!-- Add Symlink Target Card (2/3 width) -->
-          <div class="settings-card" style="flex: 2; min-width: 320px; margin: 0; padding: 24px;">
+          <!-- Active Symlinks Table -->
+          <div class="settings-card" style="width: 100%; margin: 0; padding: 24px;">
             <div class="settings-card-header">
               <div class="settings-card-icon">
-                <img src="icons/plus.svg" width="16" height="16" alt="" />
+                <img src="icons/link.svg" width="16" height="16" alt="" />
               </div>
-              <h3 class="settings-card-title">Add Symlink Target</h3>
+              <h3 class="settings-card-title">Project Symlinks</h3>
             </div>
-            <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
-              <div class="form-group-col" style="width: 100%;">
-                <label class="form-label">Target Folder Path</label>
-                <div class="input-browse-group" style="width: 100%;">
-                  <input type="text" id="symlink-screen-new-path" class="settings-input" placeholder="Select target folder..." readonly style="cursor: pointer;" />
-                  <button type="button" class="btn-browse" id="btn-browse-symlink-screen" title="Browse folder">Browse</button>
-                </div>
-              </div>
-              <div id="symlink-screen-name-group" class="hidden" style="width: 100%; display: flex; flex-direction: column; gap: 16px;">
-                <div class="form-group-col" style="width: 100%;">
-                  <label class="form-label">Symlink Name</label>
-                  <input type="text" id="symlink-screen-new-name" class="settings-input" placeholder="e.g. assets (defaults to folder name)" autocomplete="off" spellcheck="false" style="width: 100%;" />
-                </div>
-                <button type="button" class="btn-primary" id="btn-add-symlink-screen-target" style="width: 100%; justify-content: center; height: 36px; gap: 8px;">
-                  <img src="icons/plus.svg" width="12" height="12" alt="" />
-                  Add to list
-                </button>
+            <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 16px;">
+              <div id="symlink-screen-list-container" style="width: 100%;">
+                <!-- Dynamic list rendered in JS -->
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Managed Symlink Targets Card (Full width below) -->
-        <div class="settings-card" style="width: 100%;">
-          <div class="settings-card-header">
-            <div class="settings-card-icon">
-              <img src="icons/link.svg" width="16" height="16" alt="" />
+        </div>
+      </div>
+
+      <!-- ═══ Center — Agent Toolkit Screen ═══ -->
+      <div id="agent-toolkit-screen" class="hidden">
+        <div class="settings-container">
+          <header class="settings-header">
+            <div class="settings-title-group">
+              <h2 class="settings-title">Agent Toolkit Setup</h2>
+              <p class="settings-subtitle">Manage and symlink BMAD, OpenSpec, and platform directories for your current project, and exclude them from local Git status.</p>
             </div>
-            <h3 class="settings-card-title">Managed Symlink Targets</h3>
+            <button type="button" class="btn-close-settings" id="btn-close-agent-toolkit-screen" title="Close toolkit setup" aria-label="Close toolkit setup">
+              <img src="icons/close.svg" width="16" height="16" alt="" />
+            </button>
+          </header>
+
+          <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+            <div>
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; display: block;">Active Worktree</span>
+              <span id="agent-toolkit-active-worktree-name" style="font-size: 14px; font-weight: 600; color: var(--accent-color);">No active project</span>
+              <div id="agent-toolkit-active-worktree-path" style="font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 2px;">Please select a worktree first.</div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button type="button" class="btn-secondary" id="btn-agent-toolkit-apply-all" style="padding: 8px 16px;">
+                <img src="icons/check.svg" width="14" height="14" alt="" />
+                Apply Selected Toolkits
+              </button>
+            </div>
           </div>
-          <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
-            <div id="symlink-screen-list-container" style="width: 100%;"></div>
+
+          <!-- Core Components & Platforms -->
+          <div style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
+            <div class="settings-card" style="width: 100%; margin: 0;">
+              <div class="settings-card-header">
+                <div class="settings-card-icon">
+                  <img src="icons/agent-toolkit.svg" width="16" height="16" alt="" />
+                </div>
+                <h3 class="settings-card-title">Toolkit Components & Git Exclude</h3>
+              </div>
+              <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
+                <div id="agent-toolkit-list-container" style="width: 100%;">
+                  <!-- Dynamic checklist rendered in JS -->
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </main>
 
-    <!-- ═══ Center — Agent Toolkit Screen ═══ -->
-    <main id="agent-toolkit-screen" class="hidden">
-      <div class="settings-container">
-        <header class="settings-header">
-          <div class="settings-title-group">
-            <h2 class="settings-title">Agent Toolkit Setup</h2>
-            <p class="settings-subtitle">Manage and symlink BMAD, OpenSpec, and platform directories for your current project, and exclude them from local Git status.</p>
-          </div>
-          <button type="button" class="btn-close-settings" id="btn-close-agent-toolkit-screen" title="Close toolkit setup" aria-label="Close toolkit setup">
-            <img src="icons/close.svg" width="16" height="16" alt="" />
-          </button>
-        </header>
-
-        <div class="symlink-screen-top-row" style="display: flex; gap: 20px; align-items: stretch; margin-bottom: 20px; flex-wrap: wrap; width: 100%;">
-          <!-- Active Worktree Box (Full width) -->
-          <div style="flex: 1; width: 100%; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column; gap: 6px; justify-content: center;">
-            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Active Worktree</div>
-            <div class="symlink-name" id="agent-toolkit-active-name" style="font-size: 16px; font-weight: 600; color: var(--text-default);">No active project</div>
-            <div id="agent-toolkit-active-path" style="font-size: 12px; color: var(--text-secondary); word-break: break-all; font-family: var(--font-mono); margin-top: 2px;">Please select a worktree first.</div>
-          </div>
-        </div>
-
-
-
-        <!-- Core Components & Platforms -->
-        <div style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
-          <div class="settings-card" style="width: 100%; margin: 0;">
-            <div class="settings-card-header">
-              <div class="settings-card-icon">
-                <img src="icons/agent-toolkit.svg" width="16" height="16" alt="" />
-              </div>
-              <h3 class="settings-card-title">Toolkit Components & Git Exclude</h3>
+      <!-- ═══ Center — Plane Task Management Screen ═══ -->
+      <div id="plane-task-screen" class="hidden">
+        <div class="settings-container">
+          <header class="settings-header">
+            <div class="settings-title-group">
+              <h2 class="settings-title" style="display: flex; align-items: center; gap: 10px;">
+                <span>Plane Task Management</span>
+                <span id="plane-status-badge" class="plane-badge badge-success" style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 12px;">Connected 🟢</span>
+              </h2>
+              <p class="settings-subtitle">Preview, filter, sort, and export Plane project tasks directly to your project workspace.</p>
             </div>
-            <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
-              <div id="agent-toolkit-list-container" style="width: 100%;">
-                <!-- Dynamic checklist rendered in JS -->
+            <button type="button" class="btn-close-settings" id="btn-close-plane-task-screen" title="Close Plane Tasks" aria-label="Close Plane Tasks">
+              <img src="icons/close.svg" width="16" height="16" alt="" />
+            </button>
+          </header>
+
+          <!-- Plane Project Setup & Actions Toolbar -->
+          <div class="plane-setup-card">
+            <div class="plane-setup-content">
+              <!-- Active Worktree Info -->
+              <div class="plane-setup-worktree">
+                <span class="plane-setup-label">Active Worktree</span>
+                <div class="plane-worktree-badge">
+                  <img src="icons/folder.svg" width="14" height="14" alt="" />
+                  <span id="plane-active-worktree-name">No active project</span>
+                </div>
+              </div>
+
+              <!-- Plane Project ID Field -->
+              <div class="plane-setup-input-group">
+                <label for="plane-project-id-input" class="plane-setup-label">
+                  <span>Plane Project ID</span>
+                  <span class="plane-setup-sublabel">(Per-project UUID)</span>
+                </label>
+                <div class="plane-input-wrapper">
+                  <input type="text" id="plane-project-id-input" class="settings-input plane-project-id-field" placeholder="Paste Plane Project UUID here..." value="" autocomplete="off" spellcheck="false" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Buttons Toolbar -->
+            <div class="plane-setup-actions">
+              <button type="button" class="btn-secondary plane-action-btn" id="btn-save-plane-project-config" title="Save Project ID for active worktree">
+                <img src="icons/check.svg" width="14" height="14" alt="" />
+                <span>Save Config</span>
+              </button>
+              <button type="button" class="btn-secondary plane-action-btn" id="btn-refresh-plane-tasks" title="Fetch latest tasks from Plane REST API">
+                <img src="icons/refresh.svg" width="14" height="14" alt="" />
+                <span>Fetch Tasks</span>
+              </button>
+              <button type="button" class="btn-primary plane-action-btn plane-action-btn-primary" id="btn-export-plane-tasks" title="Export tasks to PLANE_TASK_LIST.md">
+                <img src="icons/download.svg" width="14" height="14" alt="" />
+                <span>Export PLANE_TASK_LIST.md</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Filter Pills & Search Bar -->
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+            <!-- Category Filter Pills -->
+            <div class="plane-filter-group" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <button type="button" class="plane-filter-pill active" data-category="all">All (<span id="count-all">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="backlog">🔴 Backlog (<span id="count-backlog">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="todo">🟡 Todo (<span id="count-todo">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="in_progress">🔵 In Progress (<span id="count-in-progress">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="done">🟢 Done (<span id="count-done">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="cancelled">⚪ Cancelled (<span id="count-cancelled">0</span>)</button>
+            </div>
+
+            <!-- Search & Sorting Toolbar -->
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="plane-search-input" class="settings-input" placeholder="🔍 Search tasks by ID, name, or keywords..." style="flex: 1; min-width: 260px; height: 34px; font-size: 13px;" />
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary); white-space: nowrap;">Sort By:</label>
+                <select id="plane-sort-select" class="settings-input" style="height: 34px; font-size: 12px; padding: 0 10px; cursor: pointer;">
+                  <option value="priority-desc">Priority (High ➔ Low)</option>
+                  <option value="priority-asc">Priority (Low ➔ High)</option>
+                  <option value="id-asc">Sequence ID (1 ➔ N)</option>
+                  <option value="id-desc">Sequence ID (N ➔ 1)</option>
+                  <option value="title-asc">Title (A ➔ Z)</option>
+                  <option value="updated-desc">Recently Updated</option>
+                </select>
               </div>
             </div>
           </div>
+
+          <!-- Table Toolbar & Interactive Table -->
+          <div class="settings-card" style="width: 100%; margin: 0; padding: 0; overflow: hidden;">
+            <div style="padding: 12px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">📋 Task List Preview</span>
+              </div>
+              <div id="plane-table-loading" class="spinner hidden" style="width: 16px; height: 16px; border-width: 2px;"></div>
+            </div>
+
+            <div style="overflow-x: auto; max-height: calc(100vh - 280px); min-height: 350px; overflow-y: auto;">
+              <table id="plane-tasks-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                <thead>
+                  <tr style="background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); letter-spacing: 0.05em; sticky: top; top: 0;">
+                    <th style="padding: 10px 14px; width: 110px;">ID</th>
+                    <th style="padding: 10px 14px;">Task Name</th>
+                    <th style="padding: 10px 14px; width: 130px;">Status</th>
+                    <th style="padding: 10px 14px; width: 110px;">Priority</th>
+                    <th style="padding: 10px 14px; width: 110px;">Start Date</th>
+                    <th style="padding: 10px 14px; width: 130px;">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="plane-tasks-tbody">
+                  <!-- Dynamically populated in app.ts -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </div>
     </main>
@@ -372,6 +519,10 @@
             <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-agent-toolkit" title="Agent Toolkit Setup" aria-label="Agent Toolkit Setup">
               <span class="workspace-tool-icon"><img src="icons/agent-toolkit.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Toolkit Setup</span>
+            </button>
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-plane-tasks" title="Plane Task Management" aria-label="Plane Task Management">
+              <span class="workspace-tool-icon"><img src="icons/task.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">Plane Tasks</span>
             </button>
           </div>
         </section>

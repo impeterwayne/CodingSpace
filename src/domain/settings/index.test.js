@@ -33,8 +33,14 @@ test('normalizeSettings trims values and drops blank entries', () => {
       androidStudioPath: 'studio64',
       antigravityPath: 'antigravity-ide',
       antigravityAgentPath: 'antigravity',
+      openspecSourcePath: '',
+      bmadSourcePath: '',
       autoRefreshCurrentProject: true,
       autoRefreshInterval: 10,
+      planeApiKey: 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+      planeBaseUrl: 'https://plane.itgproduct.com',
+      planeWorkspaceSlug: 'product',
+      projectPlaneIds: {},
     }
   );
 });
@@ -46,8 +52,14 @@ test('normalizeSettings falls back for non-object input', () => {
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    openspecSourcePath: '',
+    bmadSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,
+    planeApiKey: 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+    planeBaseUrl: 'https://plane.itgproduct.com',
+    planeWorkspaceSlug: 'product',
+    projectPlaneIds: {},
   });
 });
 
@@ -95,7 +107,13 @@ test('normalizeWorkspaceConfig keeps projects array and normalizes settings', ()
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    openspecSourcePath: '',
+    bmadSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,
+    planeApiKey: 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+    planeBaseUrl: 'https://plane.itgproduct.com',
+    planeWorkspaceSlug: 'product',
+    projectPlaneIds: {},
   });
 });

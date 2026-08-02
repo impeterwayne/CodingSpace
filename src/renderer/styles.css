@@ -195,6 +195,33 @@ body {
 .titlebar-btn:hover { background: var(--control-bg-ghost-hover); color: var(--text-primary); }
 .titlebar-btn.btn-close:hover { background: var(--red); color: white; }
 
+/* ── SVG Image Icons for Dark Theme ── */
+img[src$=".svg"] {
+  display: inline-block;
+  vertical-align: middle;
+  filter: brightness(0) invert(0.85);
+  transition: filter var(--transition-fast);
+}
+
+.brand-logo-btn img,
+.workspace-tool-icon img,
+.app-logo img,
+img[src*="android"],
+img[src*="antigravity"],
+img[src*="code"],
+img[src*="claude"],
+img[src*="opencode"],
+img[src*="windows-terminal"] {
+  filter: none;
+}
+
+.titlebar-btn:hover img,
+.sidebar-icon-btn:hover img,
+.btn-close-settings:hover img,
+.btn-primary img {
+  filter: brightness(0) invert(1);
+}
+
 /* ══════════════════════════════════════════
    APP SHELL — Sidebar + Center
    ══════════════════════════════════════════ */
@@ -1687,21 +1714,27 @@ body {
   display: none !important;
 }
 
-#settings-screen, #symlink-screen, #agent-toolkit-screen {
-  flex: 1;
-  min-width: 0;
+#settings-screen, #symlink-screen, #agent-toolkit-screen, #plane-task-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .settings-container {
-  max-width: 860px;
   width: 100%;
-  margin: 0 auto;
-  padding: 40px var(--panel-padding-lg);
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 32px 40px;
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -2135,3 +2168,200 @@ body {
   color: var(--danger-default);
   background: var(--bg-hover-danger);
 }
+
+/* ─── Plane Task Management Screen Styles ─── */
+.plane-setup-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.plane-setup-card:hover {
+  border-color: var(--border-default);
+}
+
+.plane-setup-content {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 300px;
+}
+
+.plane-setup-worktree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.plane-setup-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plane-setup-sublabel {
+  font-size: 10px;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: normal;
+}
+
+.plane-worktree-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-color, #6366f1);
+}
+
+.plane-setup-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.plane-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.plane-project-id-field {
+  height: 34px;
+  font-size: 12.5px;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  border-radius: var(--radius-md, 8px);
+  padding: 0 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.plane-project-id-field:focus {
+  border-color: var(--accent-default, #6366f1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.plane-setup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plane-action-btn {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.plane-action-btn:hover {
+  transform: translateY(-1px);
+}
+
+.plane-action-btn:active {
+  transform: translateY(0);
+}
+
+.plane-action-btn-primary {
+  font-weight: 600;
+}
+
+.plane-filter-pill {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.plane-filter-pill:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+  color: var(--text-default);
+}
+.plane-filter-pill.active {
+  background: var(--accent-default, #6366f1);
+  border-color: var(--accent-default, #6366f1);
+  color: #ffffff;
+}
+
+#plane-tasks-table tbody tr {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color 0.15s ease;
+}
+#plane-tasks-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+#plane-tasks-table td {
+  padding: 10px 14px;
+  vertical-align: middle;
+}
+
+.plane-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.plane-badge.badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: rgb(52, 211, 153);
+}
+.plane-badge.badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: rgb(248, 113, 113);
+}
+.plane-badge.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: rgb(251, 191, 36);
+}
+.plane-badge.badge-info {
+  background: rgba(59, 130, 246, 0.15);
+  color: rgb(96, 165, 250);
+}
+.plane-badge.badge-neutral {
+  background: rgba(107, 114, 128, 0.15);
+  color: rgb(156, 163, 175);
+}
+

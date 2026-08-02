@@ -1,6 +1,18 @@
 /* ═══════════════════════════════════════════════════════
    Coding Space — Renderer (Embedded Terminal + Sidebar)
    ═══════════════════════════════════════════════════════ */
+import {
+  DEFAULT_PLANE_CONFIG,
+  fetchProjectStates,
+  fetchProjectIssues,
+  categorizeIssues,
+  generateTaskListMD,
+  cleanHTML,
+  formatPriority,
+  PlaneIssue,
+  PlaneState,
+} from './services/planeService';
+
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 const { WebLinksAddon } = require('@xterm/addon-web-links');
@@ -184,6 +196,27 @@ const dom = {
   agentToolkitActiveName: $('#agent-toolkit-active-name'),
   agentToolkitActivePath: $('#agent-toolkit-active-path'),
   agentToolkitListContainer: $('#agent-toolkit-list-container'),
+  btnPlaneTasks: $('#btn-plane-tasks'),
+  planeTaskScreen: $('#plane-task-screen'),
+  btnClosePlaneTaskScreen: $('#btn-close-plane-task-screen'),
+  btnRefreshPlaneTasks: $('#btn-refresh-plane-tasks'),
+  btnExportPlaneTasks: $('#btn-export-plane-tasks'),
+  planeWorkspaceSlug: $('#plane-workspace-slug'),
+  planeProjectId: $('#plane-project-id'),
+  planeActiveWorktreeName: $('#plane-active-worktree-name'),
+  planeSearchInput: $('#plane-search-input'),
+  planeSortSelect: $('#plane-sort-select'),
+  planeSelectAllCheckbox: $('#plane-select-all-checkbox'),
+  planeSelectionSummary: $('#plane-selection-summary'),
+  planeTasksTbody: $('#plane-tasks-tbody'),
+  planeTableLoading: $('#plane-table-loading'),
+  planeStatusBadge: $('#plane-status-badge'),
+  settingsPlaneApiKey: $('#settings-plane-api-key'),
+  settingsPlaneBaseUrl: $('#settings-plane-base-url'),
+  settingsPlaneWorkspaceSlug: $('#settings-plane-workspace-slug'),
+  planeWorkspaceSlugInput: $('#plane-workspace-slug-input'),
+  planeProjectIdInput: $('#plane-project-id-input'),
+  btnSavePlaneProjectConfig: $('#btn-save-plane-project-config'),
 };
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
@@ -228,6 +261,9 @@ const settingsInputs = [
   dom.settingsAntigravityAgentPath,
   dom.settingsAndroidStudioPath,
   dom.settingsVsCodePath,
+  dom.settingsPlaneApiKey,
+  dom.settingsPlaneBaseUrl,
+  dom.settingsPlaneWorkspaceSlug,
 ];
 for (const input of settingsInputs) {
   if (input) {
@@ -1212,8 +1248,7 @@ function switchWorktreeContext(wtPath) {
   dom.settingsScreen.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
-  dom.terminalArea.classList.remove('hidden');
-  dom.workspaceSidebar.classList.remove('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
 
   if (state.activeWorktreePath === wtPath) return;
 
@@ -1295,8 +1330,7 @@ function switchToTerminal(id) {
   dom.settingsScreen.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
-  dom.terminalArea.classList.remove('hidden');
-  dom.workspaceSidebar.classList.remove('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
 
   const termInfo = state.terminals.get(id);
   if (!termInfo) return;
@@ -2243,6 +2277,9 @@ async function saveSettingsFromUI() {
     vscodePath: dom.settingsVsCodePath ? cleanVal(dom.settingsVsCodePath.value) : '',
     autoRefreshCurrentProject: dom.settingsAutoRefresh ? dom.settingsAutoRefresh.checked : true,
     autoRefreshInterval: isNaN(intervalVal) || intervalVal < 1 ? 10 : intervalVal,
+    planeApiKey: dom.settingsPlaneApiKey ? dom.settingsPlaneApiKey.value.trim() : state.settings?.planeApiKey || '',
+    planeBaseUrl: dom.settingsPlaneBaseUrl ? dom.settingsPlaneBaseUrl.value.trim() : state.settings?.planeBaseUrl || '',
+    planeWorkspaceSlug: dom.settingsPlaneWorkspaceSlug ? dom.settingsPlaneWorkspaceSlug.value.trim() : state.settings?.planeWorkspaceSlug || '',
   };
   state.settings = await window.api.updateSettings(nextSettings);
 }
@@ -2255,12 +2292,14 @@ async function showSettingsScreen() {
     if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || 'detecting...';
     if (dom.settingsAutoRefresh) dom.settingsAutoRefresh.checked = !!state.settings.autoRefreshCurrentProject;
     if (dom.settingsAutoRefreshInterval) dom.settingsAutoRefreshInterval.value = String(state.settings.autoRefreshInterval || 10);
+    if (dom.settingsPlaneApiKey) dom.settingsPlaneApiKey.value = state.settings.planeApiKey || '';
+    if (dom.settingsPlaneBaseUrl) dom.settingsPlaneBaseUrl.value = state.settings.planeBaseUrl || 'https://plane.itgproduct.com';
+    if (dom.settingsPlaneWorkspaceSlug) dom.settingsPlaneWorkspaceSlug.value = state.settings.planeWorkspaceSlug || 'product';
   }
 
-  dom.terminalArea.classList.add('hidden');
-  dom.workspaceSidebar.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
   dom.settingsScreen.classList.remove('hidden');
 
   try {
@@ -2302,8 +2341,6 @@ async function showSettingsScreen() {
 async function hideSettingsScreen() {
   await saveSettingsFromUI();
   dom.settingsScreen.classList.add('hidden');
-  dom.terminalArea.classList.remove('hidden');
-  dom.workspaceSidebar.classList.remove('hidden');
   fitActiveTerminal();
   startAutoRefreshLoop();
 }
@@ -2316,11 +2353,10 @@ async function showSymlinkScreen() {
   if (dom.symlinkScreenActiveName) dom.symlinkScreenActiveName.textContent = activeWorktreeName;
   if (dom.symlinkScreenActivePath) dom.symlinkScreenActivePath.textContent = activeWorktreePath || 'Please select a worktree first.';
 
-  dom.terminalArea.classList.add('hidden');
-  dom.workspaceSidebar.classList.add('hidden');
   dom.settingsScreen.classList.add('hidden');
-  if (dom.symlinkScreen) dom.symlinkScreen.classList.remove('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.remove('hidden');
 
   if (dom.symlinkScreenNewPath) dom.symlinkScreenNewPath.value = '';
   if (dom.symlinkScreenNewName) dom.symlinkScreenNewName.value = '';
@@ -2363,8 +2399,6 @@ async function showSymlinkScreen() {
 
 function hideSymlinkScreen() {
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
-  dom.terminalArea.classList.remove('hidden');
-  dom.workspaceSidebar.classList.remove('hidden');
   fitActiveTerminal();
   startAutoRefreshLoop();
 }
@@ -2708,10 +2742,9 @@ async function showAgentToolkitScreen() {
   if (dom.agentToolkitActiveName) dom.agentToolkitActiveName.textContent = activeWorktreeName;
   if (dom.agentToolkitActivePath) dom.agentToolkitActivePath.textContent = activeWorktreePath || 'Please select a worktree first.';
 
-  dom.terminalArea.classList.add('hidden');
-  dom.workspaceSidebar.classList.add('hidden');
   dom.settingsScreen.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.remove('hidden');
 
   await refreshAgentToolkitStatus();
@@ -2719,8 +2752,6 @@ async function showAgentToolkitScreen() {
 
 function hideAgentToolkitScreen() {
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
-  dom.terminalArea.classList.remove('hidden');
-  dom.workspaceSidebar.classList.remove('hidden');
   fitActiveTerminal();
   startAutoRefreshLoop();
 }
@@ -2733,7 +2764,7 @@ const TOOLKIT_COMPONENTS = [
     name: 'OpenSpec Core Infrastructure',
     folderName: 'openspec',
     description: 'Core OpenSpec configuration and specs folder.',
-    gitExcludePatterns: [] // Do not exclude specs to allow git tracking
+    gitExcludePatterns: ['openspec/']
   },
   {
     id: 'openspec_claude',
@@ -3347,6 +3378,544 @@ if (dom.btnAgentToolkit) {
     const activeWorktreePath = getRequiredActiveWorktreePath();
     if (!activeWorktreePath) return;
     showAgentToolkitScreen();
+  });
+}
+
+// ── Plane Task Management Store & Actions ──────────────────
+interface PlaneTasksStore {
+  rawIssues: PlaneIssue[];
+  stateMap: Map<string, PlaneState>;
+  filterCategory: string;
+  searchQuery: string;
+  sortBy: string;
+  isLoading: boolean;
+}
+
+const planeTasksStore: PlaneTasksStore = {
+  rawIssues: [],
+  stateMap: new Map(),
+  filterCategory: 'all',
+  searchQuery: '',
+  sortBy: 'priority-desc',
+  isLoading: false,
+};
+
+function getPlaneConfigForActiveProject(): PlaneConfig {
+  const activeWorktreePath = state.activeWorktreePath;
+  const projectPlaneIds = state.settings?.projectPlaneIds || {};
+
+  let projectId = '';
+  if (activeWorktreePath && projectPlaneIds[activeWorktreePath]) {
+    projectId = projectPlaneIds[activeWorktreePath];
+  } else if (dom.planeProjectIdInput && dom.planeProjectIdInput.value.trim()) {
+    projectId = dom.planeProjectIdInput.value.trim();
+  }
+
+  const workspaceSlug = dom.planeWorkspaceSlugInput && dom.planeWorkspaceSlugInput.value.trim()
+    ? dom.planeWorkspaceSlugInput.value.trim()
+    : state.settings?.planeWorkspaceSlug || DEFAULT_PLANE_CONFIG.workspaceSlug;
+
+  const baseUrl = state.settings?.planeBaseUrl || DEFAULT_PLANE_CONFIG.baseUrl;
+  const apiKey = state.settings?.planeApiKey || DEFAULT_PLANE_CONFIG.apiKey;
+
+  return {
+    baseUrl,
+    apiKey,
+    workspaceSlug,
+    projectId,
+  };
+}
+
+async function showPlaneTaskScreen() {
+  const activeWorktreePath = state.activeWorktreePath;
+  const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
+
+  const cfg = getPlaneConfigForActiveProject();
+
+  if (dom.planeActiveWorktreeName) dom.planeActiveWorktreeName.textContent = activeWorktreeName || 'No active project';
+  if (dom.planeWorkspaceSlugInput) dom.planeWorkspaceSlugInput.value = cfg.workspaceSlug;
+  if (dom.planeProjectIdInput) dom.planeProjectIdInput.value = cfg.projectId;
+
+  dom.settingsScreen.classList.add('hidden');
+  if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
+  if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.remove('hidden');
+
+  if (!cfg.projectId) {
+    if (dom.planeStatusBadge) {
+      dom.planeStatusBadge.textContent = 'Project ID Required ⚠️';
+      dom.planeStatusBadge.className = 'plane-badge badge-warning';
+    }
+    if (dom.planeTasksTbody) {
+      dom.planeTasksTbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
+            <div>Paste your Plane Project UUID in the input above and click <strong>"Save Config"</strong> to fetch tasks.</div>
+          </td>
+        </tr>
+      `;
+    }
+    return;
+  }
+
+  if (planeTasksStore.rawIssues.length === 0) {
+    await fetchAndRenderPlaneTasks();
+  } else {
+    renderPlaneTasksTable();
+  }
+}
+
+function hidePlaneTaskScreen() {
+  if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
+  fitActiveTerminal();
+  startAutoRefreshLoop();
+}
+
+async function fetchAndRenderPlaneTasks() {
+  if (!dom.planeTaskScreen) return;
+
+  const cfg = getPlaneConfigForActiveProject();
+  if (!cfg.projectId) {
+    if (dom.planeStatusBadge) {
+      dom.planeStatusBadge.textContent = 'Project ID Required ⚠️';
+      dom.planeStatusBadge.className = 'plane-badge badge-warning';
+    }
+    if (dom.planeTasksTbody) {
+      dom.planeTasksTbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
+            <div>Paste your Plane Project UUID in the input above and click <strong>"Save Config"</strong> to fetch tasks.</div>
+          </td>
+        </tr>
+      `;
+    }
+    showToast('Please paste a Plane Project UUID and click "Save Config"', 'warning');
+    return;
+  }
+
+  planeTasksStore.isLoading = true;
+  if (dom.planeTableLoading) dom.planeTableLoading.classList.remove('hidden');
+  if (dom.planeStatusBadge) {
+    dom.planeStatusBadge.textContent = 'Fetching... ⏳';
+    dom.planeStatusBadge.className = 'plane-badge badge-info';
+  }
+
+  try {
+    const [stateMap, issues] = await Promise.all([
+      fetchProjectStates(cfg),
+      fetchProjectIssues(cfg),
+    ]);
+
+    planeTasksStore.stateMap = stateMap;
+    planeTasksStore.rawIssues = issues;
+
+    for (const issue of issues) {
+      const s = stateMap.get(issue.state);
+      if (s) {
+        issue.stateName = s.name;
+        issue.stateGroup = s.group;
+      }
+    }
+
+    if (dom.planeStatusBadge) {
+      dom.planeStatusBadge.textContent = 'Connected 🟢';
+      dom.planeStatusBadge.className = 'plane-badge badge-success';
+    }
+
+    updateCategoryCounts();
+    renderPlaneTasksTable();
+  } catch (err: any) {
+    console.error('Failed to fetch Plane tasks:', err);
+    if (dom.planeStatusBadge) {
+      dom.planeStatusBadge.textContent = 'Connection Failed 🔴';
+      dom.planeStatusBadge.className = 'plane-badge badge-danger';
+    }
+    showToast(`Failed to fetch Plane tasks: ${err?.message || String(err)}`, 'error');
+  } finally {
+    planeTasksStore.isLoading = false;
+    if (dom.planeTableLoading) dom.planeTableLoading.classList.add('hidden');
+  }
+}
+
+function updateCategoryCounts() {
+  const { backlog, todo, inProgress, done, cancelled } = categorizeIssues(
+    planeTasksStore.rawIssues,
+    planeTasksStore.stateMap
+  );
+
+  const setVal = (id: string, count: number) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(count);
+  };
+
+  setVal('count-all', planeTasksStore.rawIssues.length);
+  setVal('count-backlog', backlog.length);
+  setVal('count-todo', todo.length);
+  setVal('count-in-progress', inProgress.length);
+  setVal('count-done', done.length);
+  setVal('count-cancelled', cancelled.length);
+}
+
+function getFilteredAndSortedIssues(): PlaneIssue[] {
+  let issues = [...planeTasksStore.rawIssues];
+
+  if (planeTasksStore.filterCategory !== 'all') {
+    issues = issues.filter((issue) => {
+      const group = (issue.stateGroup || '').toLowerCase();
+      const name = (issue.stateName || '').toLowerCase();
+      switch (planeTasksStore.filterCategory) {
+        case 'backlog':
+          return group === 'backlog' || name === 'backlog';
+        case 'todo':
+          return group === 'unstarted' || name === 'todo';
+        case 'in_progress':
+          return group === 'started' || name === 'in progress';
+        case 'done':
+          return group === 'completed' || name === 'done';
+        case 'cancelled':
+          return group === 'cancelled' || name === 'cancelled';
+        default:
+          return true;
+      }
+    });
+  }
+
+  if (planeTasksStore.searchQuery.trim()) {
+    const q = planeTasksStore.searchQuery.toLowerCase().trim();
+    issues = issues.filter((issue) => {
+      const seqIdStr = `pdffillsig-${issue.sequence_id}`;
+      const nameStr = (issue.name || '').toLowerCase();
+      const descStr = cleanHTML(issue.description_html).toLowerCase();
+      return seqIdStr.includes(q) || nameStr.includes(q) || descStr.includes(q);
+    });
+  }
+
+  const priorityRank: Record<string, number> = {
+    urgent: 4,
+    high: 3,
+    medium: 2,
+    low: 1,
+    none: 0,
+  };
+
+  issues.sort((a, b) => {
+    switch (planeTasksStore.sortBy) {
+      case 'priority-desc':
+        return (priorityRank[b.priority?.toLowerCase() || 'none'] || 0) - (priorityRank[a.priority?.toLowerCase() || 'none'] || 0);
+      case 'priority-asc':
+        return (priorityRank[a.priority?.toLowerCase() || 'none'] || 0) - (priorityRank[b.priority?.toLowerCase() || 'none'] || 0);
+      case 'id-asc':
+        return a.sequence_id - b.sequence_id;
+      case 'id-desc':
+        return b.sequence_id - a.sequence_id;
+      case 'title-asc':
+        return a.name.localeCompare(b.name);
+      case 'updated-desc':
+        return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+      default:
+        return 0;
+    }
+  });
+
+  return issues;
+}
+
+function renderPlaneTasksTable() {
+  const tbody = dom.planeTasksTbody;
+  if (!tbody) return;
+
+  const filtered = getFilteredAndSortedIssues();
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
+          No tasks found matching current filters.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((issue) => {
+    const statusText = issue.stateName || 'Unknown';
+    const statusGroup = (issue.stateGroup || '').toLowerCase();
+
+    let statusBadgeClass = 'badge-neutral';
+    if (statusGroup === 'completed' || statusText.toLowerCase() === 'done') statusBadgeClass = 'badge-success';
+    else if (statusGroup === 'started' || statusText.toLowerCase() === 'in progress') statusBadgeClass = 'badge-info';
+    else if (statusGroup === 'unstarted' || statusText.toLowerCase() === 'todo') statusBadgeClass = 'badge-warning';
+    else if (statusGroup === 'backlog') statusBadgeClass = 'badge-danger';
+
+    const priorityFormatted = formatPriority(issue.priority);
+    const startDate = issue.start_date ? issue.start_date : '-';
+    const updatedDate = issue.updated_at ? issue.updated_at.substring(0, 10) : '-';
+
+    return `
+      <tr>
+        <td style="font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary);">
+          PDFF-<sup>${issue.sequence_id}</sup>
+        </td>
+        <td>
+          <div style="font-weight: 500; color: var(--text-default); line-height: 1.3;">${esc(issue.name)}</div>
+          ${issue.description_html ? `<div style="font-size: 11px; color: var(--text-tertiary); max-width: 450px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">${esc(cleanHTML(issue.description_html))}</div>` : ''}
+        </td>
+        <td>
+          <span class="plane-badge ${statusBadgeClass}">${esc(statusText)}</span>
+        </td>
+        <td>
+          <span style="font-size: 12px;">${priorityFormatted}</span>
+        </td>
+        <td style="font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono);">${startDate}</td>
+        <td style="font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono);">${updatedDate}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openExportPlaneTasksModal() {
+  const activeWorktreePath = state.activeWorktreePath;
+  if (!activeWorktreePath) {
+    showToast('No active project worktree selected!', 'error');
+    return;
+  }
+
+  if (planeTasksStore.rawIssues.length === 0) {
+    showToast('No tasks available to export. Fetch tasks first!', 'warning');
+    return;
+  }
+
+  const categorized = categorizeIssues(
+    planeTasksStore.rawIssues,
+    planeTasksStore.stateMap
+  );
+
+  const modalBodyHTML = `
+    <div style="display: flex; flex-direction: column; gap: 16px; font-size: 13px;">
+      <div>
+        <span style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; display: block; margin-bottom: 10px;">Select Sections to Include in Markdown</span>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="backlog" checked />
+            <span>🔴 <strong>Backlog Tasks</strong> (${categorized.backlog.length})</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="todo" checked />
+            <span>🟡 <strong>Todo Tasks</strong> (${categorized.todo.length})</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="in_progress" />
+            <span>🔵 <strong>In Progress Tasks</strong> (${categorized.inProgress.length})</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="done" />
+            <span>🟢 <strong>Done Tasks</strong> (${categorized.done.length})</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="cancelled" />
+            <span>⚪ <strong>Cancelled Tasks</strong> (${categorized.cancelled.length})</span>
+          </label>
+          ${categorized.other.length > 0 ? `
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
+            <input type="checkbox" class="export-section-checkbox" data-category="other" />
+            <span>❓ <strong>Other / Draft Tasks</strong> (${categorized.other.length})</span>
+          </label>
+          ` : ''}
+        </div>
+      </div>
+
+      <div id="export-section-summary" style="padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+        <strong>Target File:</strong> <code>PLANE_TASK_LIST.md</code> <br />
+        <span id="export-task-count-text">0 tasks will be exported.</span>
+      </div>
+    </div>
+  `;
+
+  dom.modalTitle.textContent = '📥 Export Task List Options';
+  dom.modalBody.innerHTML = modalBodyHTML;
+  showModal();
+
+  const getCheckedCategories = (): Set<string> => {
+    const checked = new Set<string>();
+    dom.modalBody.querySelectorAll('.export-section-checkbox').forEach((cb: Element) => {
+      const input = cb as HTMLInputElement;
+      if (input.checked && input.dataset.category) {
+        checked.add(input.dataset.category);
+      }
+    });
+    return checked;
+  };
+
+  const updateModalSummary = () => {
+    const checked = getCheckedCategories();
+    const activeCategorized = categorizeIssues(planeTasksStore.rawIssues, planeTasksStore.stateMap);
+    let totalToExport = 0;
+    if (checked.has('backlog')) totalToExport += activeCategorized.backlog.length;
+    if (checked.has('todo')) totalToExport += activeCategorized.todo.length;
+    if (checked.has('in_progress')) totalToExport += activeCategorized.inProgress.length;
+    if (checked.has('done')) totalToExport += activeCategorized.done.length;
+    if (checked.has('cancelled')) totalToExport += activeCategorized.cancelled.length;
+    if (checked.has('other')) totalToExport += activeCategorized.other.length;
+
+    const countText = dom.modalBody.querySelector('#export-task-count-text');
+    if (countText) {
+      countText.textContent = `${totalToExport} tasks from ${checked.size} section(s) will be exported.`;
+    }
+  };
+
+  dom.modalBody.querySelectorAll('.export-section-checkbox').forEach((cb: Element) => {
+    cb.addEventListener('change', updateModalSummary);
+  });
+
+  updateModalSummary();
+
+  configureModalFooter([
+    {
+      label: 'Cancel',
+      class: 'btn-secondary',
+      onClick: () => hideModal(),
+    },
+    {
+      label: '🚀 Export Markdown',
+      class: 'btn-primary',
+      onClick: async () => {
+        const checked = getCheckedCategories();
+        if (checked.size === 0) {
+          showToast('Please select at least one section to export!', 'warning');
+          return;
+        }
+
+        const currentCategorized = categorizeIssues(planeTasksStore.rawIssues, planeTasksStore.stateMap);
+        const filteredForExport: PlaneIssue[] = [];
+        if (checked.has('backlog')) filteredForExport.push(...currentCategorized.backlog);
+        if (checked.has('todo')) filteredForExport.push(...currentCategorized.todo);
+        if (checked.has('in_progress')) filteredForExport.push(...currentCategorized.inProgress);
+        if (checked.has('done')) filteredForExport.push(...currentCategorized.done);
+        if (checked.has('cancelled')) filteredForExport.push(...currentCategorized.cancelled);
+        if (checked.has('other')) filteredForExport.push(...currentCategorized.other);
+
+        showToast('Generating PLANE_TASK_LIST.md...', 'info');
+
+        const cfg = getPlaneConfigForActiveProject();
+        const mdContent = generateTaskListMD(
+          cfg,
+          filteredForExport,
+          planeTasksStore.stateMap
+        );
+
+        const res = await window.api.writeProjectFile({
+          worktreePath: activeWorktreePath,
+          filename: 'PLANE_TASK_LIST.md',
+          content: mdContent,
+        });
+
+        if (res?.success) {
+          showToast(`Exported PLANE_TASK_LIST.md to ${activeWorktreePath}`, 'success');
+          hideModal();
+        } else {
+          showToast(`Export failed: ${res?.error || 'Unknown error'}`, 'error');
+        }
+      },
+    },
+  ]);
+}
+
+// ── Bind Plane Task Management Listeners ────────────────────
+if (dom.btnPlaneTasks) {
+  dom.btnPlaneTasks.addEventListener('click', showPlaneTaskScreen);
+}
+
+if (dom.btnClosePlaneTaskScreen) {
+  dom.btnClosePlaneTaskScreen.addEventListener('click', hidePlaneTaskScreen);
+}
+
+if (dom.btnSavePlaneProjectConfig) {
+  dom.btnSavePlaneProjectConfig.addEventListener('click', async () => {
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) {
+      showToast('Please select an active project worktree first', 'error');
+      return;
+    }
+
+    const projectId = dom.planeProjectIdInput ? dom.planeProjectIdInput.value.trim() : '';
+    const workspaceSlug = dom.planeWorkspaceSlugInput ? dom.planeWorkspaceSlugInput.value.trim() : '';
+
+    if (!projectId) {
+      showToast('Please enter a valid Plane Project ID', 'warning');
+      return;
+    }
+
+    const currentProjectIds = state.settings?.projectPlaneIds || {};
+    const nextProjectIds = {
+      ...currentProjectIds,
+      [activeWorktreePath]: projectId,
+    };
+
+    state.settings = await window.api.updateSettings({
+      ...state.settings,
+      planeWorkspaceSlug: workspaceSlug || state.settings?.planeWorkspaceSlug || 'product',
+      projectPlaneIds: nextProjectIds,
+    });
+
+    showToast('Saved Project ID config! Fetching tasks...', 'success');
+    await fetchAndRenderPlaneTasks();
+  });
+}
+
+if (dom.btnRefreshPlaneTasks) {
+  dom.btnRefreshPlaneTasks.addEventListener('click', async () => {
+    showToast('Fetching latest Plane tasks...', 'info');
+    await fetchAndRenderPlaneTasks();
+    showToast('Plane tasks updated!', 'success');
+  });
+}
+
+if (dom.btnExportPlaneTasks) {
+  dom.btnExportPlaneTasks.addEventListener('click', () => {
+    openExportPlaneTasksModal();
+  });
+}
+
+// Filter pills
+document.querySelectorAll('.plane-filter-pill').forEach((pill) => {
+  pill.addEventListener('click', (e) => {
+    document.querySelectorAll('.plane-filter-pill').forEach((p) => p.classList.remove('active'));
+    const target = e.currentTarget as HTMLElement;
+    target.classList.add('active');
+    planeTasksStore.filterCategory = target.dataset.category || 'all';
+    renderPlaneTasksTable();
+  });
+});
+
+// Search input
+if (dom.planeSearchInput) {
+  dom.planeSearchInput.addEventListener('input', (e) => {
+    planeTasksStore.searchQuery = (e.target as HTMLInputElement).value;
+    renderPlaneTasksTable();
+  });
+}
+
+// Sort select
+if (dom.planeSortSelect) {
+  dom.planeSortSelect.addEventListener('change', (e) => {
+    planeTasksStore.sortBy = (e.target as HTMLSelectElement).value;
+    renderPlaneTasksTable();
+  });
+}
+
+// Select All checkbox
+if (dom.planeSelectAllCheckbox) {
+  dom.planeSelectAllCheckbox.addEventListener('change', (e) => {
+    const isChecked = (e.target as HTMLInputElement).checked;
+    const filtered = getFilteredAndSortedIssues();
+    for (const issue of filtered) {
+      if (isChecked) {
+        planeTasksStore.selectedIds.add(issue.id);
+      } else {
+        planeTasksStore.selectedIds.delete(issue.id);
+      }
+    }
+    renderPlaneTasksTable();
   });
 }
 

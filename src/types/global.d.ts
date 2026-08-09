@@ -34,6 +34,7 @@ declare global {
       openWindowsTerminal: (opts: OpenWindowsTerminalOptions) => Promise<any>;
       openInEditor: (path: string) => Promise<any>;
       openInExplorer: (path: string) => Promise<any>;
+      openExternal: (url: string) => Promise<any>;
       openInAndroidStudio: (path: string) => Promise<any>;
       openInAntigravity: (path: string) => Promise<any>;
       openInAntigravityAgent: (path: string) => Promise<any>;

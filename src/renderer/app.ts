@@ -592,7 +592,11 @@ function applyTerminalBehavior(term, behavior: TerminalBehavior) {
 
 function loadRendererAddons(term, fitAddon) {
   term.loadAddon(fitAddon);
-  term.loadAddon(new WebLinksAddon());
+  // The addon's default handler does window.open() then sets location.href, which Electron
+  // turns into an in-app window instead of the OS browser — hand the URL to the main process.
+  term.loadAddon(new WebLinksAddon((_event, uri) => {
+    void window.api.openExternal(uri);
+  }));
   try {
     term.loadAddon(new WebglAddon());
   } catch (error) {

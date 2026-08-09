@@ -233,6 +233,18 @@ function getDefaultShell() {
   return process.env.SHELL || '/bin/bash';
 }
 
+// ── External links ─────────────────────────────────────
+// Only http/https reach the OS handler; other schemes (file:, javascript:, custom
+// protocols) are ignored so terminal output can't launch arbitrary apps.
+function openExternalUrl(url) {
+  if (typeof url !== 'string') return { success: false, error: 'Invalid URL' };
+  if (!/^https?:\/\//iu.test(url)) return { success: false, error: 'Unsupported URL scheme' };
+  shell.openExternal(url).catch((err) => {
+    console.error('Failed to open external link:', err);
+  });
+  return { success: true };
+}
+
 // ── Window ─────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -248,6 +260,22 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
     },
+  });
+
+  // Intercept window.open calls (e.g. from xterm web-links addon or target="_blank" links).
+  // Note: some callers (xterm's WebLinksAddon) call window.open() with no URL and then assign
+  // location.href, so `url` here can be about:blank — never let that spawn a child window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalUrl(url);
+    return { action: 'deny' };
+  });
+
+  // Intercept standard navigation in the main window (e.g. clicks on normal HTTP/HTTPS links)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      event.preventDefault();
+      openExternalUrl(url);
+    }
   });
 
   mainWindow.loadFile(path.join(app.getAppPath(), 'src', 'renderer', 'index.html'));
@@ -839,6 +867,8 @@ app.whenReady().then(() => {
       return { success: false, error: e.message };
     }
   });
+
+  ipcMain.handle('open-external', (_, url) => openExternalUrl(url));
 
   ipcMain.handle('open-in-explorer', (_, dirPath) => {
     void shell.openPath(dirPath);

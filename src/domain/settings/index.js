@@ -15,7 +15,6 @@ function normalizeSettings(settings) {
     antigravityPath: typeof nextSettings.antigravityPath === 'string' ? nextSettings.antigravityPath.trim() : '',
     antigravityAgentPath: typeof nextSettings.antigravityAgentPath === 'string' ? nextSettings.antigravityAgentPath.trim() : '',
     openspecSourcePath: typeof nextSettings.openspecSourcePath === 'string' ? nextSettings.openspecSourcePath.trim() : '',
-    bmadSourcePath: typeof nextSettings.bmadSourcePath === 'string' ? nextSettings.bmadSourcePath.trim() : '',
     autoRefreshCurrentProject: typeof nextSettings.autoRefreshCurrentProject === 'boolean' ? nextSettings.autoRefreshCurrentProject : true,
     autoRefreshInterval: typeof nextSettings.autoRefreshInterval === 'number' && nextSettings.autoRefreshInterval >= 1 ? nextSettings.autoRefreshInterval : 10,
     planeApiKey: typeof nextSettings.planeApiKey === 'string' && nextSettings.planeApiKey.trim() ? nextSettings.planeApiKey.trim() : 'plane_api_468d764bbdbe4b87ae158976ac2e1559',

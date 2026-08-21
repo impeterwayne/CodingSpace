@@ -1,12 +1,12 @@
 # Coding Space
 
-Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, integrate AI agent toolkits (BMAD-METHOD, OpenSpec), and operate using embedded or external terminal interfaces.
+Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, integrate AI agent toolkits (OpenSpec), and operate using embedded or external terminal interfaces.
 
 ## Features
 
 - **Git Worktree Orchestration**: Automated scanning, lifecycle management, and branch/merge syncing directly from the UI.
 - **Symlink Management**: Share large directories like `node_modules` or assets between worktrees to save disk space.
-- **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (BMAD-METHOD, OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
+- **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
 - **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in external Windows Terminal windows. The new-tab menu includes a danger-marked Codex YOLO launcher for explicitly unsandboxed sessions.
 - **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, and Windows Explorer.
 

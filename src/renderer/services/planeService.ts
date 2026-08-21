@@ -1,3 +1,10 @@
+export interface PlaneProject {
+  id: string;
+  name: string;
+  identifier: string;
+  description?: string;
+}
+
 export interface PlaneIssue {
   id: string;
   sequence_id: number;
@@ -7,6 +14,12 @@ export interface PlaneIssue {
   state: string; // State ID
   stateName?: string;
   stateGroup?: string;
+  project_identifier?: string;
+  project_detail?: {
+    id?: string;
+    identifier?: string;
+    name?: string;
+  };
   start_date?: string;
   target_date?: string;
   created_at?: string;
@@ -97,6 +110,29 @@ export async function fetchProjectIssues(cfg: PlaneConfig): Promise<PlaneIssue[]
     return data.results;
   }
   return [];
+}
+
+export async function fetchProjectDetails(cfg: PlaneConfig): Promise<PlaneProject | null> {
+  try {
+    const url = `${cfg.baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${cfg.workspaceSlug}/projects/${cfg.projectId}/`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'X-API-Key': cfg.apiKey,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    console.warn('Failed to fetch project details:', err);
+    return null;
+  }
 }
 
 export function cleanHTML(html?: string): string {
@@ -225,13 +261,22 @@ export function categorizeIssues(issues: PlaneIssue[], stateMap: Map<string, Pla
   return { backlog, todo, inProgress, done, cancelled, other };
 }
 
-export function generateTaskListMD(cfg: PlaneConfig, issues: PlaneIssue[], stateMap: Map<string, PlaneState>, mediaMap?: Map<number, EvidenceMedia[]>): string {
+export function generateTaskListMD(
+  cfg: PlaneConfig,
+  issues: PlaneIssue[],
+  stateMap: Map<string, PlaneState>,
+  mediaMap?: Map<number, EvidenceMedia[]>,
+  projectInfo?: PlaneProject | null
+): string {
   const { backlog, todo, inProgress, done, cancelled, other } = categorizeIssues(issues, stateMap);
   const totalCount = issues.length;
   const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
+  const projectName = projectInfo?.name || issues[0]?.project_detail?.name || 'Plane Project';
+  const projectIdentifier = projectInfo?.identifier || issues[0]?.project_detail?.identifier || issues[0]?.project_identifier || '';
+
   let md = `# 📋 Plane Comprehensive Task List (All States)\n\n`;
-  md += `> **Workspace:** \`${cfg.workspaceSlug}\` | **Project:** \`PDF Fill&Sign 5\` (\`${cfg.projectId}\`)  \n`;
+  md += `> **Workspace:** \`${cfg.workspaceSlug}\` | **Project:** \`${projectName}\` (\`${cfg.projectId}\`)  \n`;
   md += `> **Generated:** ${now}  \n`;
   md += `> **Total Tasks Included:** **${totalCount}** (All Categories)  \n\n`;
 
@@ -250,7 +295,9 @@ export function generateTaskListMD(cfg: PlaneConfig, issues: PlaneIssue[], state
   md += `| **TOTAL** | **${totalCount}** | ✨ |\n\n`;
 
   const formatItem = (checkbox: string, item: PlaneIssue) => {
-    let itemMd = `- [${checkbox}] **PDFFILLSIG-${item.sequence_id}**: ${item.name}\n`;
+    const itemPrefix = projectIdentifier || item.project_detail?.identifier || item.project_identifier || '';
+    const taskTag = itemPrefix ? `${itemPrefix}-${item.sequence_id}` : `#${item.sequence_id}`;
+    let itemMd = `- [${checkbox}] **${taskTag}**: ${item.name}\n`;
     itemMd += `  - **Priority:** ${formatPriority(item.priority)} | **Start Date:** \`${formatDate(item.start_date)}\``;
     if (item.updated_at) {
       itemMd += ` | **Last Updated:** \`${formatDate(item.updated_at)}\``;

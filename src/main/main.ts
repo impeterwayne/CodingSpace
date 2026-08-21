@@ -622,8 +622,7 @@ app.whenReady().then(() => {
       ? path.join(process.resourcesPath, 'toolkits')
       : path.join(app.getAppPath(), 'toolkits');
     return {
-      openspecPath: path.join(toolkitsDir, 'OpenSpec'),
-      bmadPath: path.join(toolkitsDir, 'BMAD-METHOD')
+      openspecPath: path.join(toolkitsDir, 'OpenSpec')
     };
   });
 

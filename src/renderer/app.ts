@@ -5,12 +5,14 @@ import {
   DEFAULT_PLANE_CONFIG,
   fetchProjectStates,
   fetchProjectIssues,
+  fetchProjectDetails,
   categorizeIssues,
   generateTaskListMD,
   cleanHTML,
   formatPriority,
   PlaneIssue,
   PlaneState,
+  PlaneProject,
   EvidenceMedia,
   scrapeLightshotImageURL,
   scrapeStreamableMediaURLs,
@@ -90,7 +92,6 @@ const state: {
     antigravityPath?: string;
     antigravityAgentPath?: string;
     openspecSourcePath?: string;
-    bmadSourcePath?: string;
     autoRefreshCurrentProject?: boolean;
     autoRefreshInterval?: number;
   };
@@ -450,7 +451,6 @@ const iconRaw = {
   link: loadIcon('link'),
   'agent-toolkit': loadIcon('agent-toolkit'),
   openspec: loadIcon('openspec'),
-  bmad: loadIcon('bmad'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -477,7 +477,6 @@ const icons = {
   codex: iconSvg(iconRaw.codex, 12),
   agentToolkit: iconSvg(iconRaw['agent-toolkit'], 16),
   openspec: iconSvg(iconRaw.openspec, 16),
-  bmad: iconSvg(iconRaw.bmad, 16),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -590,7 +589,17 @@ function applyTerminalBehavior(term, behavior: TerminalBehavior) {
   return () => {};
 }
 
+// OSC 8 hyperlinks (emitted by Claude Code, gh, npm, vite…) bypass the web-links addon —
+// xterm handles them itself, and its default handler confirm()s then calls window.open(),
+// which the main process denies, so the link goes nowhere. Route it through the same IPC.
+const TERMINAL_LINK_HANDLER = {
+  activate: (_event, text) => {
+    void window.api.openExternal(text);
+  },
+};
+
 function loadRendererAddons(term, fitAddon) {
+  term.options.linkHandler = TERMINAL_LINK_HANDLER;
   term.loadAddon(fitAddon);
   // The addon's default handler does window.open() then sets location.href, which Electron
   // turns into an in-app window instead of the OS browser — hand the URL to the main process.
@@ -2824,51 +2833,6 @@ const TOOLKIT_COMPONENTS = [
     ],
     description: 'Deploys OpenSpec shared skills and slash-command workflows.',
     gitExcludePatterns: ['.agents/skills/openspec-*/', '.agents/workflows/opsx-*']
-  },
-
-  // --- BMAD Group Components ---
-  {
-    id: 'bmad_core',
-    name: 'BMAD Core Engine',
-    folderName: '_bmad',
-    description: 'Core BMAD engine skills and configs. Integrates _bmad-output automatically.',
-    gitExcludePatterns: ['_bmad/', '_bmad-output/']
-  },
-  {
-    id: 'bmad_antigravity',
-    name: 'Antigravity BMAD Workflows',
-    isMulti: true,
-    folders: [
-      { name: '.agents\\skills', pattern: '.agents/skills/' },
-      { name: '.agents\\workflows', pattern: '.agents/workflows/' }
-    ],
-    description: 'Deploys BMAD shared skills and slash-command workflows.',
-    gitExcludePatterns: ['.agents/skills/bmad-*/', '.agents/workflows/bmad-*']
-  },
-  {
-    id: 'bmad_claude',
-    name: 'Claude BMAD Skills',
-    folderName: '.claude\\skills',
-    description: 'Claude-specific skills and agent instructions.',
-    gitExcludePatterns: ['.claude/skills/bmad-*/']
-  },
-  {
-    id: 'bmad_codex',
-    name: 'Codex BMAD Skills',
-    folderName: '.codex\\skills',
-    description: 'Codex-specific skills and custom Codex settings.',
-    gitExcludePatterns: ['.codex/skills/bmad-*/']
-  },
-  {
-    id: 'bmad_opencode',
-    name: 'OpenCode BMAD Skills',
-    isMulti: true,
-    folders: [
-      { name: '.opencode\\skills', pattern: '.opencode/skills/' },
-      { name: '.opencode\\commands', pattern: '.opencode/commands/' }
-    ],
-    description: 'OpenCode-specific skills and tools.',
-    gitExcludePatterns: ['.opencode/skills/bmad-*/', '.opencode/commands/bmad-*/']
   }
 ];
 
@@ -2910,31 +2874,6 @@ async function refreshAgentToolkitStatus() {
     openspecPath = defaultSources.openspecPath;
   }
 
-  // Determine bmadSourcePath (setting -> embedded defaults -> candidates -> default)
-  let bmadPath = state.settings.bmadSourcePath || '';
-  if (!bmadPath) {
-    if (await window.api.pathExists(defaultSources.bmadPath)) {
-      bmadPath = defaultSources.bmadPath;
-    } else {
-      const bmadCandidates = [
-        pPath + '\\BMAD-METHOD',
-        pPath + '\\bmad-method',
-        pPath + '\\BMAD',
-        pPath + '\\_bmad'
-      ];
-      for (const cand of bmadCandidates) {
-        if (await window.api.pathExists(cand)) {
-          bmadPath = cand;
-          break;
-        }
-      }
-    }
-  }
-  if (!bmadPath) {
-    bmadPath = defaultSources.bmadPath;
-  }
-
-
   const listContainer = dom.agentToolkitListContainer;
   if (!listContainer) return;
 
@@ -2952,16 +2891,9 @@ async function refreshAgentToolkitStatus() {
       { id: 'openspec_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
     ];
 
-    const BMAD_PLATFORMS = [
-      { id: 'bmad_antigravity', name: 'Antigravity', description: 'Deploys BMAD shared skills and slash-command workflows.' },
-      { id: 'bmad_claude', name: 'Claude', description: 'Deploys Claude-specific skills and agent instructions.' },
-      { id: 'bmad_codex', name: 'Codex', description: 'Deploys Codex-specific skills and custom Codex settings.' },
-      { id: 'bmad_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
-    ];
-
     // Fetch statuses for all components
     const statuses = await Promise.all(TOOLKIT_COMPONENTS.map(async (comp) => {
-      const srcBase = comp.id.startsWith('openspec_') ? openspecPath : bmadPath;
+      const srcBase = openspecPath;
       
       let sourceExists = false;
       try {
@@ -3000,22 +2932,6 @@ async function refreshAgentToolkitStatus() {
             sourcePath: srcBase + '\\' + comp.folderName
           });
           exists = status.exists;
-        } catch (e) {
-          exists = false;
-        }
-      }
-
-      // If it's a BMAD platform component, also require that _bmad engine exists
-      if (exists && comp.id.startsWith('bmad_') && comp.id !== 'bmad_core') {
-        try {
-          const coreStatus = await window.api.checkToolkitStatus({
-            worktreePath: activeWorktreePath,
-            name: '_bmad',
-            sourcePath: bmadPath + '\\_bmad'
-          });
-          if (!coreStatus.exists) {
-            exists = false;
-          }
         } catch (e) {
           exists = false;
         }
@@ -3117,36 +3033,9 @@ async function refreshAgentToolkitStatus() {
       </div>
     `;
 
-    // Generate BMAD HTML Group
-    const bmadItemsHtml = BMAD_PLATFORMS.map(p => renderPlatformItem(p)).join('');
-    const bmadCoreActive = getStatus('bmad_core').exists;
-    const bmadCoreBadge = bmadCoreActive 
-      ? `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); font-size: 10px; padding: 2px 6px;">Core Active</span>` 
-      : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
-
-    const bmadHtml = `
-      <div style="display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); height: 100%;">
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
-              ${icons.bmad}
-            </div>
-            <div class="symlink-info">
-              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">BMAD METHOD</span>
-            </div>
-          </div>
-          ${bmadCoreBadge}
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 6px;">
-          ${bmadItemsHtml}
-        </div>
-      </div>
-    `;
-
     listContainer.innerHTML = `
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; width: 100%;">
+      <div style="display: grid; grid-template-columns: 1fr; gap: 20px; width: 100%;">
         ${openspecHtml}
-        ${bmadHtml}
       </div>
     `;
 
@@ -3162,7 +3051,7 @@ async function refreshAgentToolkitStatus() {
         if (!comp) return;
         target.disabled = true;
 
-        const srcBase = id.startsWith('openspec_') ? openspecPath : bmadPath;
+        const srcBase = openspecPath;
 
         const safeDeploy = async (name, sourcePath) => {
           const res = await window.api.deployToolkit({
@@ -3233,40 +3122,6 @@ async function refreshAgentToolkitStatus() {
                   });
                 }
               }
-            } else if (id.startsWith('bmad_')) {
-              // BMAD Core
-              const coreStatus = getStatus('bmad_core');
-              if (!coreStatus.exists) {
-                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_core');
-                if (coreComp) {
-                  // create _bmad-output directory
-                  const outputDir = cleanPath(activeWorktreePath) + '\\_bmad-output';
-                  await window.api.createDirectory(outputDir);
-                  
-                  await safeDeploy(coreComp.folderName, bmadPath + '\\' + coreComp.folderName);
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: coreComp.gitExcludePatterns,
-                    action: 'add'
-                  });
-                }
-              }
-
-              // BMAD Shared (bmad_antigravity)
-              const sharedStatus = getStatus('bmad_antigravity');
-              if (!sharedStatus.exists) {
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_antigravity');
-                if (sharedComp) {
-                  for (const f of sharedComp.folders) {
-                    await safeDeploy(f.name, bmadPath + '\\' + f.name);
-                  }
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: sharedComp.gitExcludePatterns,
-                    action: 'add'
-                  });
-                }
-              }
             }
 
             showToast(`Successfully activated ${comp.name}!`, 'success');
@@ -3282,15 +3137,6 @@ async function refreshAgentToolkitStatus() {
                 return cb && cb.checked;
               });
               if (activeOpenSpecChecks.length > 0) {
-                shouldRemovePlatform = false;
-              }
-            } else if (id === 'bmad_antigravity') {
-              const activeBmadChecks = BMAD_PLATFORMS.filter(p => {
-                if (p.id === id) return false;
-                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
-                return cb && cb.checked;
-              });
-              if (activeBmadChecks.length > 0) {
                 shouldRemovePlatform = false;
               }
             }
@@ -3342,37 +3188,6 @@ async function refreshAgentToolkitStatus() {
                   });
                 }
               }
-            } else if (id.startsWith('bmad_')) {
-              const activeBmadChecks = BMAD_PLATFORMS.filter(p => {
-                if (p.id === id) return false;
-                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
-                return cb && cb.checked;
-              });
-
-              if (activeBmadChecks.length === 0) {
-                // Remove BMAD Core
-                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_core');
-                if (coreComp) {
-                  await safeRemove(coreComp.folderName, bmadPath + '\\' + coreComp.folderName);
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: coreComp.gitExcludePatterns,
-                    action: 'remove'
-                  });
-                }
-                // Remove BMAD Shared (bmad_antigravity)
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'bmad_antigravity');
-                if (sharedComp) {
-                  for (const f of sharedComp.folders) {
-                    await safeRemove(f.name, bmadPath + '\\' + f.name);
-                  }
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: sharedComp.gitExcludePatterns,
-                    action: 'remove'
-                  });
-                }
-              }
             }
 
             showToast(`Successfully deactivated ${comp.name}.`, 'success');
@@ -3408,6 +3223,7 @@ if (dom.btnAgentToolkit) {
 interface PlaneTasksStore {
   rawIssues: PlaneIssue[];
   stateMap: Map<string, PlaneState>;
+  projectInfo: PlaneProject | null;
   filterCategory: string;
   searchQuery: string;
   sortBy: string;
@@ -3417,6 +3233,7 @@ interface PlaneTasksStore {
 const planeTasksStore: PlaneTasksStore = {
   rawIssues: [],
   stateMap: new Map(),
+  projectInfo: null,
   filterCategory: 'all',
   searchQuery: '',
   sortBy: 'priority-desc',
@@ -3524,13 +3341,15 @@ async function fetchAndRenderPlaneTasks() {
   }
 
   try {
-    const [stateMap, issues] = await Promise.all([
+    const [stateMap, issues, projectInfo] = await Promise.all([
       fetchProjectStates(cfg),
       fetchProjectIssues(cfg),
+      fetchProjectDetails(cfg).catch(() => null),
     ]);
 
     planeTasksStore.stateMap = stateMap;
     planeTasksStore.rawIssues = issues;
+    planeTasksStore.projectInfo = projectInfo;
 
     for (const issue of issues) {
       const s = stateMap.get(issue.state);
@@ -3605,11 +3424,14 @@ function getFilteredAndSortedIssues(): PlaneIssue[] {
 
   if (planeTasksStore.searchQuery.trim()) {
     const q = planeTasksStore.searchQuery.toLowerCase().trim();
+    const projId = (planeTasksStore.projectInfo?.identifier || '').toLowerCase();
     issues = issues.filter((issue) => {
-      const seqIdStr = `pdffillsig-${issue.sequence_id}`;
+      const issueProj = (issue.project_detail?.identifier || issue.project_identifier || projId).toLowerCase();
+      const fullTaskStr = issueProj ? `${issueProj}-${issue.sequence_id}` : '';
+      const seqIdStr = `${issue.sequence_id}`;
       const nameStr = (issue.name || '').toLowerCase();
       const descStr = cleanHTML(issue.description_html).toLowerCase();
-      return seqIdStr.includes(q) || nameStr.includes(q) || descStr.includes(q);
+      return (fullTaskStr && fullTaskStr.includes(q)) || seqIdStr.includes(q) || nameStr.includes(q) || descStr.includes(q);
     });
   }
 
@@ -3660,6 +3482,8 @@ function renderPlaneTasksTable() {
     return;
   }
 
+  const defaultProjIdentifier = planeTasksStore.projectInfo?.identifier || '';
+
   tbody.innerHTML = filtered.map((issue) => {
     const statusText = issue.stateName || 'Unknown';
     const statusGroup = (issue.stateGroup || '').toLowerCase();
@@ -3673,11 +3497,13 @@ function renderPlaneTasksTable() {
     const priorityFormatted = formatPriority(issue.priority);
     const startDate = issue.start_date ? issue.start_date : '-';
     const updatedDate = issue.updated_at ? issue.updated_at.substring(0, 10) : '-';
+    const projPrefix = issue.project_detail?.identifier || issue.project_identifier || defaultProjIdentifier;
+    const taskBadge = projPrefix ? `${esc(projPrefix)}-${issue.sequence_id}` : `#${issue.sequence_id}`;
 
     return `
       <tr>
         <td style="font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary);">
-          PDFF-<sup>${issue.sequence_id}</sup>
+          ${taskBadge}
         </td>
         <td>
           <div style="font-weight: 500; color: var(--text-default); line-height: 1.3;">${esc(issue.name)}</div>
@@ -3897,10 +3723,13 @@ function openExportPlaneTasksModal() {
         let screenshotCount = 0;
         let videoCount = 0;
 
+        const defaultProjIdentifier = planeTasksStore.projectInfo?.identifier || '';
+
         for (let i = 0; i < filteredForExport.length; i++) {
           const task = filteredForExport[i];
           const desc = task.description_html || '';
-          const taskID = `PDFFILLSIG-${task.sequence_id}`;
+          const projPrefix = task.project_detail?.identifier || task.project_identifier || defaultProjIdentifier;
+          const taskID = projPrefix ? `${projPrefix}-${task.sequence_id}` : `TASK-${task.sequence_id}`;
           const taskMediaList: EvidenceMedia[] = [];
 
           // 1. Parse & Download Lightshot screenshots
@@ -3990,7 +3819,7 @@ function openExportPlaneTasksModal() {
         await appendLog('📝 Generating comprehensive Markdown task checklist...', 'info', 92);
 
         const cfg = getPlaneConfigForActiveProject();
-        const mdContent = generateTaskListMD(cfg, filteredForExport, planeTasksStore.stateMap, mediaMap);
+        const mdContent = generateTaskListMD(cfg, filteredForExport, planeTasksStore.stateMap, mediaMap, planeTasksStore.projectInfo);
 
         await appendLog('💾 Writing plane/TASK_LIST.md...', 'info', 96);
         await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/TASK_LIST.md', content: mdContent });

@@ -53,7 +53,6 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         openspecSourcePath?: string;
-        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }>;
@@ -64,7 +63,6 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         openspecSourcePath?: string;
-        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }) => Promise<{
@@ -74,7 +72,6 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         openspecSourcePath?: string;
-        bmadSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
       }>;
@@ -104,7 +101,7 @@ declare global {
       checkToolkitStatus: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ exists: boolean }>;
       deployToolkit: (opts: { worktreePath: string; name: string; sourcePath: string }) => Promise<{ success: boolean; error?: string }>;
       removeToolkit: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ success: boolean; error?: string }>;
-      getDefaultToolkitSources: () => Promise<{ openspecPath: string; bmadPath: string }>;
+      getDefaultToolkitSources: () => Promise<{ openspecPath: string }>;
     };
   }
 }

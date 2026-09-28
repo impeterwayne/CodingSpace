@@ -1,6 +1,6 @@
 {
   "name": "codingspace",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Terminal workspace manager with git worktree support",
   "main": "dist/main/main.js",
   "scripts": {

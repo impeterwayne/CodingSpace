@@ -20,7 +20,7 @@ function normalizeSettings(settings) {
     openspecSourcePath: typeof nextSettings.openspecSourcePath === 'string' ? nextSettings.openspecSourcePath.trim() : '',
     autoRefreshCurrentProject: typeof nextSettings.autoRefreshCurrentProject === 'boolean' ? nextSettings.autoRefreshCurrentProject : true,
     autoRefreshInterval: typeof nextSettings.autoRefreshInterval === 'number' && nextSettings.autoRefreshInterval >= 1 ? nextSettings.autoRefreshInterval : 10,
-    planeApiKey: typeof nextSettings.planeApiKey === 'string' && nextSettings.planeApiKey.trim() ? nextSettings.planeApiKey.trim() : 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+    planeApiKey: typeof nextSettings.planeApiKey === 'string' && nextSettings.planeApiKey.trim() ? nextSettings.planeApiKey.trim() : 'plane_api_68b11fbeb14c431cad3a1f87455b622a',
     planeBaseUrl: typeof nextSettings.planeBaseUrl === 'string' && nextSettings.planeBaseUrl.trim() ? nextSettings.planeBaseUrl.trim() : 'https://plane.itgproduct.com',
     planeWorkspaceSlug: typeof nextSettings.planeWorkspaceSlug === 'string' && nextSettings.planeWorkspaceSlug.trim() ? nextSettings.planeWorkspaceSlug.trim() : 'product',
     projectPlaneIds: nextSettings.projectPlaneIds && typeof nextSettings.projectPlaneIds === 'object' ? nextSettings.projectPlaneIds : {},

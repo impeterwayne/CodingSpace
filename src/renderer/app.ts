@@ -495,13 +495,14 @@ const TOOL_TABS: Record<string, ToolTab> = {
   },
   agy: {
     key: 'agy',
-    action: 'new-agy',
+    action: 'new-agy-dangerous',
     command: 'agy',
-    label: 'Antigravity CLI',
+    label: 'Antigravity (skip permissions)',
     iconKey: 'antigravity',
     prewarm: false,
     launchArgs: ['--dangerously-skip-permissions'],
-    title: 'Open Antigravity CLI with --dangerously-skip-permissions in a new terminal tab',
+    title: 'Open Antigravity CLI with --dangerously-skip-permissions. Only use this in isolated/sandboxed environments.',
+    warningBadge: 'danger',
     behavior: {
       forceMouseMode: false,
     },
@@ -546,7 +547,7 @@ const PREWARM_TOOLS = Object.fromEntries(
 
 function getToolTabByAction(action) {
   return Object.values(TOOL_TABS).find((tool) => tool.action === action)
-    || (action === 'new-agy-dangerous' ? TOOL_TABS.agy : null)
+    || (action === 'new-agy' || action === 'new-agy-dangerous' ? TOOL_TABS.agy : null)
     || null;
 }
 

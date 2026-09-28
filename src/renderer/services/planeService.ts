@@ -51,7 +51,7 @@ export const DEFAULT_PLANE_CONFIG: PlaneConfig = {
   baseUrl: 'https://plane.itgproduct.com',
   workspaceSlug: 'product',
   projectId: '',
-  apiKey: 'plane_api_468d764bbdbe4b87ae158976ac2e1559',
+  apiKey: 'plane_api_68b11fbeb14c431cad3a1f87455b622a',
 };
 
 const USER_AGENT_HEADER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';

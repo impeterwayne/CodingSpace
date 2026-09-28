@@ -195,6 +195,10 @@ body {
 .titlebar-btn:hover { background: var(--control-bg-ghost-hover); color: var(--text-primary); }
 .titlebar-btn.btn-close:hover { background: var(--red); color: white; }
 
+/* macOS draws native traffic-light buttons at the top-left; make room and drop the custom ones. */
+:root[data-platform="darwin"] #titlebar { padding-left: 84px; }
+:root[data-platform="darwin"] .titlebar-right { display: none; }
+
 /* ── SVG Image Icons for Dark Theme ── */
 img[src$=".svg"] {
   display: inline-block;

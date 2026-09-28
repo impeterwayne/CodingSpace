@@ -22,6 +22,7 @@ type WorktreeRemovalResult = {
 declare global {
   interface Window {
     api: {
+      platform: 'win32' | 'darwin' | 'linux' | string;
       minimize: () => void;
       maximize: () => void;
       close: () => void;

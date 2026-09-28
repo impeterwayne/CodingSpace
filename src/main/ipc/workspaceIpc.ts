@@ -1,3 +1,5 @@
+const os = require('os');
+
 function registerWorkspaceIpc({ ipcMain, dialog, mainWindow, workspaceService }) {
   ipcMain.on('window:minimize', () => mainWindow.minimize());
   ipcMain.on('window:maximize', () => {
@@ -10,10 +12,15 @@ function registerWorkspaceIpc({ ipcMain, dialog, mainWindow, workspaceService })
   ipcMain.handle('settings:get', () => workspaceService.getSettings());
   ipcMain.handle('settings:update', (_, nextSettings) => workspaceService.updateSettings(nextSettings));
   ipcMain.handle('select-executable', async () => {
+    // Unix binaries usually have no extension, so only Windows/macOS get a type filter.
+    const filtersByPlatform = {
+      win32: [{ name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'sh', 'lnk'] }],
+      darwin: [{ name: 'Applications', extensions: ['app'] }],
+    };
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [
-        { name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'sh', 'lnk'] },
+        ...(filtersByPlatform[process.platform] || []),
         { name: 'All Files', extensions: ['*'] }
       ],
       title: 'Select Executable Path',
@@ -26,7 +33,7 @@ function registerWorkspaceIpc({ ipcMain, dialog, mainWindow, workspaceService })
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
       title: title || 'Select Folder',
-      defaultPath: 'D:\\',
+      defaultPath: process.platform === 'win32' ? 'D:\\' : os.homedir(),
     });
     if (result.canceled || !result.filePaths.length) return null;
     return result.filePaths[0];

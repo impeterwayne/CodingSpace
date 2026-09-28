@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { execSync, execFileSync, spawn } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const pty = require('node-pty');
@@ -9,6 +9,17 @@ const { createWorkspaceConfigStore } = require('../application/workspaceConfigSt
 const { createWorkspaceService } = require('../application/workspaceService');
 const { registerWorkspaceIpc } = require('./ipc/workspaceIpc');
 const { installPtyShutdownLifecycle, killPtyProcess } = require('./process/ptyLifecycle');
+const {
+  isWindows,
+  isMac,
+  quoteShellArg,
+  findOnPath,
+  syncPathFromLoginShell,
+  launchDetached,
+  openExternalTerminal,
+} = require('./platform');
+
+syncPathFromLoginShell();
 
 // ── State ──────────────────────────────────────────────
 const configPath = path.join(app.getPath('userData'), 'workspaces.json');
@@ -25,58 +36,31 @@ function getGitInfo(dirPath) {
   return readGitInfo(dirPath, execSync);
 }
 
-function shellQuoteWindowsArg(value) {
-  const normalized = String(value);
-  if (!/[\s"]/u.test(normalized)) return normalized;
-  return `"${normalized.replace(/"/g, '""')}"`;
-}
-
 function buildShellCommand(commandOrPath, args = []) {
-  return [commandOrPath, ...args].map(shellQuoteWindowsArg).join(' ');
+  return [commandOrPath, ...args].map(quoteShellArg).join(' ');
 }
 
 function resolveToolLaunch(command, extraArgs = []) {
   const launchArgs = Array.isArray(extraArgs) ? extraArgs.map((arg) => String(arg)) : [];
-
-  if (process.platform !== 'win32') {
-    return {
-      file: command,
-      args: launchArgs,
-      shellCommand: buildShellCommand(command, launchArgs),
-    };
+  const resolvedPath = findOnPath(command);
+  if (!resolvedPath) {
+    throw new Error(`Tool not found on PATH: ${command}`);
   }
 
-  try {
-    const output = execFileSync('where.exe', [command], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-
-    const matches = output.split(/\r?\n/).filter(Boolean);
-    const resolvedPath = matches.find((match) => /\.(cmd|bat)$/i.test(match))
-      || matches.find((match) => /\.exe$/i.test(match))
-      || matches[0];
-    if (!resolvedPath) {
-      throw new Error(`Tool not found on PATH: ${command}`);
-    }
-
-    const ext = path.extname(resolvedPath).toLowerCase();
-    if (ext === '.cmd' || ext === '.bat') {
-      return {
-        file: 'cmd.exe',
-        args: ['/d', '/c', resolvedPath, ...launchArgs],
-        shellCommand: buildShellCommand(resolvedPath, launchArgs),
-      };
-    }
-
+  const ext = path.extname(resolvedPath).toLowerCase();
+  if (isWindows && (ext === '.cmd' || ext === '.bat')) {
     return {
-      file: resolvedPath,
-      args: launchArgs,
+      file: 'cmd.exe',
+      args: ['/d', '/c', resolvedPath, ...launchArgs],
       shellCommand: buildShellCommand(resolvedPath, launchArgs),
     };
-  } catch (error) {
-    throw new Error(error?.message || `Tool not found on PATH: ${command}`);
   }
+
+  return {
+    file: resolvedPath,
+    args: launchArgs,
+    shellCommand: buildShellCommand(resolvedPath, launchArgs),
+  };
 }
 
 function getRecentCommits(dirPath, count = 5) {
@@ -98,7 +82,7 @@ function getRecentCommits(dirPath, count = 5) {
 
 function normalizeWorktreePath(targetPath) {
   const resolvedPath = path.resolve(targetPath);
-  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+  return isWindows ? resolvedPath.toLowerCase() : resolvedPath;
 }
 
 function findWorktree(projectPath, wtPath) {
@@ -214,7 +198,7 @@ function removeWorktreeWithOptionalBranchDelete({ projectPath, wtPath, force = f
 
 // ── Detect default shell ───────────────────────────────
 function getDefaultShell() {
-  if (process.platform === 'win32') {
+  if (isWindows) {
     // Prefer PowerShell 7+ if available, then pwsh, then powershell
     const pwshPaths = [
       'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
@@ -230,7 +214,7 @@ function getDefaultShell() {
     } catch (_) {}
     return 'powershell.exe';
   }
-  return process.env.SHELL || '/bin/bash';
+  return process.env.SHELL || (isMac ? '/bin/zsh' : '/bin/bash');
 }
 
 // ── External links ─────────────────────────────────────
@@ -252,9 +236,12 @@ function createWindow() {
     height: 920,
     minWidth: 900,
     minHeight: 600,
-    frame: false,
     backgroundColor: '#08080d',
-    titleBarStyle: 'hidden',
+    // macOS keeps its native traffic-light buttons inside the custom titlebar;
+    // Windows/Linux go fully frameless and use the renderer's own window controls.
+    ...(isMac
+      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 13 } }
+      : { frame: false, titleBarStyle: 'hidden' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -313,8 +300,8 @@ app.whenReady().then(() => {
       }
       
       if (isLink && currentTarget) {
-        const resolvedCurrent = path.resolve(worktreePath, currentTarget).toLowerCase();
-        const resolvedTarget = path.resolve(targetPath).toLowerCase();
+        const resolvedCurrent = normalizeWorktreePath(path.resolve(worktreePath, currentTarget));
+        const resolvedTarget = normalizeWorktreePath(targetPath);
         if (resolvedCurrent === resolvedTarget) {
           return { exists: true, pointsToTarget: true };
         } else {
@@ -348,7 +335,7 @@ app.whenReady().then(() => {
         }
       } catch (e) {}
       
-      const type = process.platform === 'win32' ? 'junction' : 'dir';
+      const type = isWindows ? 'junction' : 'dir';
       fs.symlinkSync(targetPath, linkPath, type);
       return { success: true };
     } catch (err) {
@@ -737,9 +724,10 @@ app.whenReady().then(() => {
   ipcMain.handle('pty:create', (_, { cwd, id }) => {
     try {
       const shellPath = getDefaultShell();
+      // macOS terminals conventionally start login shells so ~/.zprofile / ~/.bash_profile load.
       const shellArgs = shellPath.includes('pwsh') || shellPath.includes('powershell')
         ? ['-NoLogo']
-        : [];
+        : isMac ? ['-l'] : [];
 
       const ptyProc = pty.spawn(shellPath, shellArgs, {
         name: 'xterm-256color',
@@ -835,32 +823,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-wt', (_, { cwd, launchCommand, launchArgs = [] }) => {
     try {
-      const args = launchCommand
-        ? ['new-tab', '-d', cwd, 'cmd.exe', '/d', '/k', resolveToolLaunch(launchCommand, launchArgs).shellCommand]
-        : ['new-tab', '-d', cwd];
-      spawn('wt.exe', args, { detached: true, stdio: 'ignore', shell: true });
-      return { success: true };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  });
-
-  ipcMain.handle('open-in-editor', (_, dirPath) => {
-    try {
-      const settings = workspaceService.getSettings();
-      const exe = settings.vscodePath || findVsCodeExecutable();
-      const ext = path.extname(exe).toLowerCase();
-      let spawnFile;
-      let spawnArgs;
-      if (ext === '.cmd' || ext === '.bat') {
-        spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe, dirPath];
-      } else {
-        spawnFile = exe;
-        spawnArgs = [dirPath];
-      }
-      const useShell = !path.isAbsolute(exe);
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: useShell, detached: true, stdio: 'ignore' });
+      const shellCommand = launchCommand
+        ? resolveToolLaunch(launchCommand, launchArgs).shellCommand
+        : null;
+      openExternalTerminal({ cwd, shellCommand });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -876,213 +842,110 @@ app.whenReady().then(() => {
 
   // ── Launch tool actions ──────────────────────────────
 
-  ipcMain.handle('open-in-android-studio', (_, dirPath) => {
-    try {
-      const settings = workspaceService.getSettings();
-      const exe = settings.androidStudioPath || findAndroidStudioExecutable();
-      const ext = path.extname(exe).toLowerCase();
-      let spawnFile;
-      let spawnArgs;
-      if (ext === '.cmd' || ext === '.bat') {
-        spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe, dirPath];
-      } else {
-        spawnFile = exe;
-        spawnArgs = [dirPath];
-      }
-      const useShell = !path.isAbsolute(exe);
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: useShell, detached: true, stdio: 'ignore' });
-      return { success: true };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  });
+  // Typical install locations per platform. Paths are checked in order, then each command
+  // is looked up on PATH; the first command is the last-resort fallback.
+  function getIntegrationLocations(key) {
+    const home = os.homedir();
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const localPrograms = path.join(home, 'AppData', 'Local', 'Programs');
+    const macApp = (name) => [path.join('/Applications', name), path.join(home, 'Applications', name)];
 
-  function detectPath(command, possiblePaths) {
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-    if (process.platform === 'win32') {
-      try {
-        const output = execFileSync('where.exe', [command], {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        }).trim();
-        const matches = output.split(/\r?\n/).filter(Boolean);
-        const resolvedPath = matches.find((match) => /\.(cmd|bat)$/i.test(match))
-          || matches.find((match) => /\.exe$/i.test(match))
-          || matches[0];
-        if (resolvedPath && fs.existsSync(resolvedPath)) {
-          return resolvedPath;
-        }
-      } catch (_) {}
-    } else {
-      try {
-        const output = execSync(`which ${command}`, {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        }).trim();
-        if (output && fs.existsSync(output)) {
-          return output;
-        }
-      } catch (_) {}
-    }
-    return null;
+    const locations = {
+      antigravity: {
+        win32: { commands: ['antigravity-ide'], paths: [
+          path.join(localPrograms, 'Antigravity IDE', 'Antigravity IDE.exe'),
+          path.join(localPrograms, 'Antigravity IDE', 'bin', 'antigravity-ide.cmd'),
+          path.join(programFiles, 'Antigravity IDE', 'Antigravity IDE.exe'),
+        ] },
+        darwin: { commands: ['antigravity-ide'], paths: macApp('Antigravity IDE.app') },
+        linux: { commands: ['antigravity-ide'], paths: [] },
+      },
+      antigravityAgent: {
+        win32: { commands: ['antigravity'], paths: [
+          path.join(localPrograms, 'antigravity', 'Antigravity.exe'),
+        ] },
+        darwin: { commands: ['antigravity'], paths: macApp('Antigravity.app') },
+        linux: { commands: ['antigravity'], paths: [] },
+      },
+      androidStudio: {
+        win32: { commands: ['studio64'], paths: [
+          path.join(programFiles, 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+          path.join(programFilesX86, 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+          path.join(home, 'AppData', 'Local', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
+        ] },
+        darwin: { commands: ['studio'], paths: macApp('Android Studio.app') },
+        linux: { commands: ['android-studio', 'studio', 'studio.sh'], paths: [
+          '/opt/android-studio/bin/studio.sh',
+          '/usr/local/android-studio/bin/studio.sh',
+          path.join(home, 'android-studio', 'bin', 'studio.sh'),
+          '/snap/bin/android-studio',
+        ] },
+      },
+      vscode: {
+        win32: { commands: ['code'], paths: [
+          path.join(localPrograms, 'Microsoft VS Code', 'bin', 'code.cmd'),
+          path.join(localPrograms, 'Microsoft VS Code', 'Code.exe'),
+          path.join(programFiles, 'Microsoft VS Code', 'bin', 'code.cmd'),
+          path.join(programFiles, 'Microsoft VS Code', 'Code.exe'),
+          path.join(programFilesX86, 'Microsoft VS Code', 'bin', 'code.cmd'),
+        ] },
+        darwin: { commands: ['code'], paths: macApp('Visual Studio Code.app') },
+        linux: { commands: ['code'], paths: [
+          '/usr/share/code/bin/code',
+          '/snap/bin/code',
+          '/var/lib/flatpak/exports/bin/com.visualstudio.code',
+          path.join(home, '.local', 'share', 'flatpak', 'exports', 'bin', 'com.visualstudio.code'),
+        ] },
+      },
+    };
+
+    const byPlatform = locations[key];
+    return byPlatform[process.platform] || byPlatform.linux;
+  }
+
+  function detectIntegrationPath(key) {
+    const { commands, paths } = getIntegrationLocations(key);
+    return paths.find((p) => fs.existsSync(p))
+      || commands.map((command) => findOnPath(command)).find(Boolean)
+      || null;
+  }
+
+  function findIntegrationExecutable(key) {
+    return detectIntegrationPath(key) || getIntegrationLocations(key).commands[0];
   }
 
   ipcMain.handle('detect-integration-paths', () => {
     return {
-      antigravityPath: detectPath('antigravity-ide', [
-        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'bin', 'antigravity-ide.cmd'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity IDE', 'Antigravity IDE.exe'),
-      ]),
-      antigravityAgentPath: detectPath('antigravity', [
-        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
-      ]),
-      androidStudioPath: detectPath('studio64', [
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-      ]),
-      vscodePath: detectPath('code', [
-        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft VS Code', 'bin', 'code.cmd'),
-      ]),
+      antigravityPath: detectIntegrationPath('antigravity'),
+      antigravityAgentPath: detectIntegrationPath('antigravityAgent'),
+      androidStudioPath: detectIntegrationPath('androidStudio'),
+      vscodePath: detectIntegrationPath('vscode'),
     };
   });
 
-
-  function findAntigravityExecutable() {
-    const possiblePaths = [
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Antigravity IDE', 'bin', 'antigravity-ide.cmd'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity IDE', 'Antigravity IDE.exe'),
-    ];
-
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
+  function openDirectoryWith(settingKey, integrationKey, dirPath) {
     try {
-      return resolveToolLaunch('antigravity-ide').file;
-    } catch (_) {
-      return 'antigravity-ide';
-    }
-  }
-
-  function findAntigravityAgentExecutable() {
-    const possiblePaths = [
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
-    ];
-
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
-    try {
-      return resolveToolLaunch('antigravity').file;
-    } catch (_) {
-      return 'antigravity';
-    }
-  }
-
-  function findAndroidStudioExecutable() {
-    const possiblePaths = [
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Android', 'Android Studio', 'bin', 'studio64.exe'),
-    ];
-
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
-    try {
-      return resolveToolLaunch('studio64').file;
-    } catch (_) {
-      return 'studio64';
-    }
-  }
-
-  function findVsCodeExecutable() {
-    const possiblePaths = [
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft VS Code', 'bin', 'code.cmd'),
-    ];
-
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
-    try {
-      return resolveToolLaunch('code').file;
-    } catch (_) {
-      return 'code';
-    }
-  }
-
-  ipcMain.handle('open-in-antigravity', (_, dirPath) => {
-    try {
-      const settings = workspaceService.getSettings();
-      const exe = settings.antigravityPath || findAntigravityExecutable();
-      const ext = path.extname(exe).toLowerCase();
-      
-      let spawnFile;
-      let spawnArgs;
-      
-      if (ext === '.cmd' || ext === '.bat') {
-        spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe, dirPath];
-      } else {
-        spawnFile = exe;
-        spawnArgs = [dirPath];
-      }
-
-      // Launch Antigravity IDE in the worktree directory safely (no shell-escaping issues)
-      spawn(spawnFile, spawnArgs, { cwd: dirPath, shell: false, detached: true, stdio: 'ignore' });
+      const exe = workspaceService.getSettings()[settingKey] || findIntegrationExecutable(integrationKey);
+      launchDetached(exe, [dirPath], { cwd: dirPath });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
     }
-  });
+  }
 
-  ipcMain.handle('open-in-antigravity-agent', (_, dirPath) => {
+  ipcMain.handle('open-in-editor', (_, dirPath) => openDirectoryWith('vscodePath', 'vscode', dirPath));
+
+  ipcMain.handle('open-in-android-studio', (_, dirPath) => openDirectoryWith('androidStudioPath', 'androidStudio', dirPath));
+
+  ipcMain.handle('open-in-antigravity', (_, dirPath) => openDirectoryWith('antigravityPath', 'antigravity', dirPath));
+
+  ipcMain.handle('open-in-antigravity-agent', () => {
     try {
-      const settings = workspaceService.getSettings();
-      const exe = settings.antigravityAgentPath || findAntigravityAgentExecutable();
-      const ext = path.extname(exe).toLowerCase();
-      
-      let spawnFile;
-      let spawnArgs;
-      
-      if (ext === '.cmd' || ext === '.bat') {
-        spawnFile = 'cmd.exe';
-        spawnArgs = ['/d', '/c', exe];
-      } else {
-        spawnFile = exe;
-        spawnArgs = [];
-      }
-
-      // Launch Antigravity Agent Manager independently
+      const exe = workspaceService.getSettings().antigravityAgentPath || findIntegrationExecutable('antigravityAgent');
+      // Launch Antigravity Agent Manager independently of any worktree
       const cwd = path.isAbsolute(exe) ? path.dirname(exe) : undefined;
-      spawn(spawnFile, spawnArgs, { cwd, shell: false, detached: true, stdio: 'ignore' });
+      launchDetached(exe, [], { cwd });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

@@ -18,7 +18,9 @@ function branchToPascalPath(branch) {
 }
 
 function getSuggestedWorktreePath(baseDir, projectName, branch) {
-  return branch ? `${baseDir}\\${projectName}-${branchToPascalPath(branch)}` : '';
+  // Windows paths from the folder picker contain backslashes; POSIX paths never do.
+  const separator = String(baseDir).includes('\\') ? '\\' : '/';
+  return branch ? `${baseDir}${separator}${projectName}-${branchToPascalPath(branch)}` : '';
 }
 
 function getWorktreeBasePath(project) {

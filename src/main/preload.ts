@@ -8,6 +8,8 @@ type OpenWindowsTerminalOptions = {
 };
 
 contextBridge.exposeInMainWorld('api', {
+  platform: process.platform,
+
   // ── Window controls ──
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

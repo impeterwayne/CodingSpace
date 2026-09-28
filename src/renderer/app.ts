@@ -56,6 +56,27 @@ type ToolTab = {
   behavior: TerminalBehavior;
 };
 
+// ── Platform ───────────────────────────────────────────
+const PLATFORM = window.api.platform;
+const IS_WINDOWS = PLATFORM === 'win32';
+const PATH_SEP = IS_WINDOWS ? '\\' : '/';
+const PLATFORM_LABELS = {
+  win32: { externalTerminal: 'Windows Terminal', externalTerminalShort: 'External WT', fileManager: 'Explorer' },
+  darwin: { externalTerminal: 'Terminal', externalTerminalShort: 'External Term', fileManager: 'Finder' },
+  linux: { externalTerminal: 'System Terminal', externalTerminalShort: 'External Term', fileManager: 'Files' },
+}[PLATFORM] || { externalTerminal: 'System Terminal', externalTerminalShort: 'External Term', fileManager: 'Files' };
+const EXTERNAL_TERMINAL_ICON_KEY = IS_WINDOWS ? 'windows-terminal' : 'terminal';
+
+document.documentElement.dataset.platform = PLATFORM;
+
+// Joins path segments with the native separator; segments may use either slash style.
+function joinPath(base, ...segments) {
+  return [
+    String(base).replace(/[\\/]+$/, ''),
+    ...segments.map((segment) => String(segment).replace(/^[\\/]+|[\\/]+$/g, '').replace(/[\\/]+/g, PATH_SEP)),
+  ].join(PATH_SEP);
+}
+
 // ── Windows Terminal color scheme ──────────────────────
 const WT_THEME = {
   background: '#0c0c0c',
@@ -222,6 +243,45 @@ const dom = {
   planeProjectIdInput: $('#plane-project-id-input'),
   btnSavePlaneProjectConfig: $('#btn-save-plane-project-config'),
 };
+
+// ── Platform-specific labels ───────────────────────────
+// index.html is authored with Windows wording; adjust it for macOS/Linux.
+function applyPlatformLabels() {
+  const fileManagerTitle = `Open in ${PLATFORM_LABELS.fileManager}`;
+  dom.btnExplorer.title = fileManagerTitle;
+  dom.btnExplorer.setAttribute('aria-label', fileManagerTitle);
+  const explorerText = dom.btnExplorer.querySelector('.workspace-tool-text');
+  if (explorerText) explorerText.textContent = PLATFORM_LABELS.fileManager;
+
+  const externalToggle = dom.toggleExternalWt.closest('.workspace-toggle');
+  if (externalToggle) externalToggle.title = `Open worktrees in external ${PLATFORM_LABELS.externalTerminal}`;
+  const externalToggleLabel = externalToggle?.querySelector('.workspace-toggle-label');
+  if (externalToggleLabel) {
+    externalToggleLabel.textContent = PLATFORM_LABELS.externalTerminalShort;
+    externalToggleLabel.dataset.labelExpanded = PLATFORM_LABELS.externalTerminalShort;
+  }
+
+  if (IS_WINDOWS) return;
+  const placeholders = PLATFORM === 'darwin'
+    ? {
+      antigravity: 'e.g. /Applications/Antigravity IDE.app',
+      antigravityAgent: 'e.g. /Applications/Antigravity.app',
+      androidStudio: 'e.g. studio or /Applications/Android Studio.app',
+      vscode: 'e.g. code or /Applications/Visual Studio Code.app',
+    }
+    : {
+      antigravity: 'e.g. antigravity-ide or full path to the launcher',
+      antigravityAgent: 'e.g. antigravity or full path to the launcher',
+      androidStudio: 'e.g. android-studio or /opt/android-studio/bin/studio.sh',
+      vscode: 'e.g. code or /usr/bin/code',
+    };
+  dom.settingsAntigravityPath.placeholder = placeholders.antigravity;
+  dom.settingsAntigravityAgentPath.placeholder = placeholders.antigravityAgent;
+  dom.settingsAndroidStudioPath.placeholder = placeholders.androidStudio;
+  dom.settingsVsCodePath.placeholder = placeholders.vscode;
+}
+
+applyPlatformLabels();
 
 const WORKSPACE_SIDEBAR_COLLAPSED_KEY = 'codingspace.workspaceSidebarCollapsed';
 const TAB_SIDEBAR_COLLAPSED_KEY = 'codingspace.tabSidebarCollapsed';
@@ -788,7 +848,7 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
   // Create xterm instance with Windows Terminal theme
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -895,7 +955,7 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
 
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -1127,7 +1187,7 @@ function promotePrewarmedTerminal(toolKey) {
 
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -1625,7 +1685,7 @@ function createNewTerminalTab() {
   const count = getTerminalsForWorktree(wtPath).length + 1;
   createTerminal(wtPath, `${wtName} (${count})`, {
     worktreePath: wtPath,
-    iconKey: state.useExternalWt ? 'windows-terminal' : 'terminal',
+    iconKey: state.useExternalWt ? EXTERNAL_TERMINAL_ICON_KEY : 'terminal',
   });
 }
 
@@ -1675,9 +1735,9 @@ function showTabDropdown() {
     html: `
       ${menuItemHTML({
         action: 'new-terminal',
-        icon: state.useExternalWt ? icons['windows-terminal'] : icons.terminal,
-        label: state.useExternalWt ? 'Windows Terminal' : 'Terminal',
-        iconClass: state.useExternalWt ? 'windows-terminal-icon' : 'terminal-icon',
+        icon: state.useExternalWt ? icons[EXTERNAL_TERMINAL_ICON_KEY] : icons.terminal,
+        label: state.useExternalWt ? PLATFORM_LABELS.externalTerminal : 'Terminal',
+        iconClass: state.useExternalWt ? `${EXTERNAL_TERMINAL_ICON_KEY}-icon` : 'terminal-icon',
       })}
       ${renderToolDropdownItems()}
     `,
@@ -1847,7 +1907,7 @@ dom.tabNewBtn.addEventListener('click', (e) => {
 
 // Tab bar external tool buttons
 bindWorktreeQuickAction(dom.btnVsCode, (wtPath) => window.api.openInEditor(wtPath), 'Opening VS Code...');
-bindWorktreeQuickAction(dom.btnExplorer, (wtPath) => window.api.openInExplorer(wtPath), 'Opening Explorer...');
+bindWorktreeQuickAction(dom.btnExplorer, (wtPath) => window.api.openInExplorer(wtPath), `Opening ${PLATFORM_LABELS.fileManager}...`);
 bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndroidStudio(wtPath), 'Opening Android Studio...');
 bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
 bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAntigravityAgent(wtPath), 'Opening Agent Manager...');
@@ -2806,14 +2866,14 @@ const TOOLKIT_COMPONENTS = [
   {
     id: 'openspec_claude',
     name: 'Claude OpenSpec Skills',
-    folderName: '.claude\\skills',
+    folderName: '.claude/skills',
     description: 'Claude-specific skills and agent instructions.',
     gitExcludePatterns: ['.claude/skills/openspec-*/']
   },
   {
     id: 'openspec_codex',
     name: 'Codex OpenSpec Skills',
-    folderName: '.codex\\skills',
+    folderName: '.codex/skills',
     description: 'Codex-specific skills and custom Codex settings.',
     gitExcludePatterns: ['.codex/skills/openspec-*/']
   },
@@ -2822,8 +2882,8 @@ const TOOLKIT_COMPONENTS = [
     name: 'OpenCode OpenSpec Skills',
     isMulti: true,
     folders: [
-      { name: '.opencode\\skills', pattern: '.opencode/skills/' },
-      { name: '.opencode\\commands', pattern: '.opencode/commands/' }
+      { name: '.opencode/skills', pattern: '.opencode/skills/' },
+      { name: '.opencode/commands', pattern: '.opencode/commands/' }
     ],
     description: 'OpenCode-specific skills and tools.',
     gitExcludePatterns: ['.opencode/skills/openspec-*/', '.opencode/commands/openspec-*/']
@@ -2833,8 +2893,8 @@ const TOOLKIT_COMPONENTS = [
     name: 'Antigravity OpenSpec Workflows',
     isMulti: true,
     folders: [
-      { name: '.agents\\skills', pattern: '.agents/skills/' },
-      { name: '.agents\\workflows', pattern: '.agents/workflows/' }
+      { name: '.agents/skills', pattern: '.agents/skills/' },
+      { name: '.agents/workflows', pattern: '.agents/workflows/' }
     ],
     description: 'Deploys OpenSpec shared skills and slash-command workflows.',
     gitExcludePatterns: ['.agents/skills/openspec-*/', '.agents/workflows/opsx-*']
@@ -2852,9 +2912,6 @@ async function refreshAgentToolkitStatus() {
     return;
   }
 
-  const cleanPath = (p) => p.replace(/\//g, '\\');
-  const pPath = cleanPath(projectPath);
-
   // 1. Determine openspecSourcePath (setting -> embedded defaults -> candidates -> default)
   const defaultSources = await window.api.getDefaultToolkitSources();
   let openspecPath = state.settings.openspecSourcePath || '';
@@ -2863,9 +2920,9 @@ async function refreshAgentToolkitStatus() {
       openspecPath = defaultSources.openspecPath;
     } else {
       const openspecCandidates = [
-        pPath + '\\OpenSpec',
-        pPath + '\\openspec',
-        pPath + '\\openspec-source'
+        joinPath(projectPath, 'OpenSpec'),
+        joinPath(projectPath, 'openspec'),
+        joinPath(projectPath, 'openspec-source')
       ];
       for (const cand of openspecCandidates) {
         if (await window.api.pathExists(cand)) {
@@ -2904,11 +2961,11 @@ async function refreshAgentToolkitStatus() {
       try {
         if (comp.isMulti) {
           const folderChecks = await Promise.all(comp.folders.map(async (f) => {
-            return await window.api.pathExists(srcBase + '\\' + f.name);
+            return await window.api.pathExists(joinPath(srcBase, f.name));
           }));
           sourceExists = folderChecks.every(v => v);
         } else {
-          sourceExists = await window.api.pathExists(srcBase + '\\' + comp.folderName);
+          sourceExists = await window.api.pathExists(joinPath(srcBase, comp.folderName));
         }
       } catch (err) {
         sourceExists = false;
@@ -2921,7 +2978,7 @@ async function refreshAgentToolkitStatus() {
             const status = await window.api.checkToolkitStatus({
               worktreePath: activeWorktreePath,
               name: f.name,
-              sourcePath: srcBase + '\\' + f.name
+              sourcePath: joinPath(srcBase, f.name)
             });
             return status.exists;
           } catch (e) {
@@ -2934,7 +2991,7 @@ async function refreshAgentToolkitStatus() {
           const status = await window.api.checkToolkitStatus({
             worktreePath: activeWorktreePath,
             name: comp.folderName,
-            sourcePath: srcBase + '\\' + comp.folderName
+            sourcePath: joinPath(srcBase, comp.folderName)
           });
           exists = status.exists;
         } catch (e) {
@@ -2948,7 +3005,7 @@ async function refreshAgentToolkitStatus() {
           const coreStatus = await window.api.checkToolkitStatus({
             worktreePath: activeWorktreePath,
             name: 'openspec',
-            sourcePath: openspecPath + '\\openspec'
+            sourcePath: joinPath(openspecPath, 'openspec')
           });
           if (!coreStatus.exists) {
             exists = false;
@@ -3083,10 +3140,10 @@ async function refreshAgentToolkitStatus() {
             // 1. Deploy platform component itself
             if (comp.isMulti) {
               for (const f of comp.folders) {
-                await safeDeploy(f.name, srcBase + '\\' + f.name);
+                await safeDeploy(f.name, joinPath(srcBase, f.name));
               }
             } else {
-              await safeDeploy(comp.folderName, srcBase + '\\' + comp.folderName);
+              await safeDeploy(comp.folderName, joinPath(srcBase, comp.folderName));
             }
 
             // Exclude platform component patterns
@@ -3103,7 +3160,7 @@ async function refreshAgentToolkitStatus() {
               if (!coreStatus.exists) {
                 const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
                 if (coreComp) {
-                  await safeDeploy(coreComp.folderName, openspecPath + '\\' + coreComp.folderName);
+                  await safeDeploy(coreComp.folderName, joinPath(openspecPath, coreComp.folderName));
                   await window.api.updateGitExclude({
                     worktreePath: activeWorktreePath,
                     patterns: coreComp.gitExcludePatterns,
@@ -3118,7 +3175,7 @@ async function refreshAgentToolkitStatus() {
                 const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
                 if (sharedComp) {
                   for (const f of sharedComp.folders) {
-                    await safeDeploy(f.name, openspecPath + '\\' + f.name);
+                    await safeDeploy(f.name, joinPath(openspecPath, f.name));
                   }
                   await window.api.updateGitExclude({
                     worktreePath: activeWorktreePath,
@@ -3149,10 +3206,10 @@ async function refreshAgentToolkitStatus() {
             if (shouldRemovePlatform) {
               if (comp.isMulti) {
                 for (const f of comp.folders) {
-                  await safeRemove(f.name, srcBase + '\\' + f.name);
+                  await safeRemove(f.name, joinPath(srcBase, f.name));
                 }
               } else {
-                await safeRemove(comp.folderName, srcBase + '\\' + comp.folderName);
+                await safeRemove(comp.folderName, joinPath(srcBase, comp.folderName));
               }
               await window.api.updateGitExclude({
                 worktreePath: activeWorktreePath,
@@ -3173,7 +3230,7 @@ async function refreshAgentToolkitStatus() {
                 // Remove OpenSpec Core
                 const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
                 if (coreComp) {
-                  await safeRemove(coreComp.folderName, openspecPath + '\\' + coreComp.folderName);
+                  await safeRemove(coreComp.folderName, joinPath(openspecPath, coreComp.folderName));
                   await window.api.updateGitExclude({
                     worktreePath: activeWorktreePath,
                     patterns: coreComp.gitExcludePatterns,
@@ -3184,7 +3241,7 @@ async function refreshAgentToolkitStatus() {
                 const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
                 if (sharedComp) {
                   for (const f of sharedComp.folders) {
-                    await safeRemove(f.name, openspecPath + '\\' + f.name);
+                    await safeRemove(f.name, joinPath(openspecPath, f.name));
                   }
                   await window.api.updateGitExclude({
                     worktreePath: activeWorktreePath,
@@ -3744,7 +3801,7 @@ function openExportPlaneTasksModal() {
               const mediaId = webUrl.split('/').pop()!;
               if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
 
-              const targetFilePath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}.png`;
+              const targetFilePath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}.png`);
               const relLocalPath = `./evidence/${taskID}/${mediaId}.png`;
 
               await appendLog(`📸 Fetching Lightshot screenshot for ${taskID}: ${mediaId}...`, 'screenshot');
@@ -3777,8 +3834,8 @@ function openExportPlaneTasksModal() {
               const mediaId = webUrl.split('/').pop()!;
               if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
 
-              const targetVideoPath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}.mp4`;
-              const targetPosterPath = `${activeWorktreePath}\\plane\\evidence\\${taskID}\\${mediaId}_poster.jpg`;
+              const targetVideoPath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}.mp4`);
+              const targetPosterPath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}_poster.jpg`);
               const relVideoPath = `./evidence/${taskID}/${mediaId}.mp4`;
               const relPosterPath = `./evidence/${taskID}/${mediaId}_poster.jpg`;
 
@@ -3838,7 +3895,7 @@ function openExportPlaneTasksModal() {
         if (doneFooter['export-btn-open-dir']) {
           doneFooter['export-btn-open-dir'].addEventListener('click', () => {
             if (activeWorktreePath) {
-              window.api.openInExplorer(`${activeWorktreePath}\\plane`);
+              window.api.openInExplorer(joinPath(activeWorktreePath, 'plane'));
             }
           });
         }

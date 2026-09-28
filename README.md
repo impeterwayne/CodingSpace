@@ -9,15 +9,16 @@ Coding Space is a developer workspace manager built on Electron and TypeScript. 
 - **Git Worktree Orchestration**: Automated scanning, lifecycle management, and branch/merge syncing directly from the UI.
 - **Symlink Management**: Share large directories like `node_modules` or assets between worktrees to save disk space.
 - **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
-- **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in external Windows Terminal windows. The new-tab menu includes danger-marked Codex (YOLO), Claude, and Antigravity CLI launchers for explicitly unsandboxed / permission-bypassed sessions.
-- **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, and Windows Explorer.
+- **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in an external terminal (Windows Terminal on Windows, Terminal.app on macOS, the system terminal emulator on Linux). The new-tab menu includes danger-marked Codex (YOLO), Claude, and Antigravity CLI launchers for explicitly unsandboxed / permission-bypassed sessions.
+- **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, and the OS file manager (Explorer / Finder / Files).
 
 ## Getting Started
 
 ### Requirements
-- Windows 10/11
+- Windows 10/11, macOS 11+, or a modern x64 Linux desktop
 - Node.js (v20+ recommended)
 - Git
+- Linux only: a C++ toolchain for building `node-pty` (`sudo apt install build-essential python3` on Debian/Ubuntu)
 
 ### Installation & Run
 ```bash
@@ -25,20 +26,33 @@ npm install
 npm start
 ```
 
-## Packaging for Windows
+## Packaging
 
 ```bash
-# Generate NSIS installer and portable EXE
+# Build for the current OS using its default targets
 npm run make
 
-# Windows target explicitly
+# Windows: NSIS installer + portable EXE (x64)
 npm run make:win
+
+# macOS: DMG + ZIP (arm64 and x64) — must run on macOS
+npm run make:mac
+
+# Linux: AppImage + .deb (x64) — must run on Linux
+npm run make:linux
 
 # Fast packaged build (unpacked directory)
 npm run pack
 ```
 
 All build artifacts are written to the `release/` directory.
+
+`node-pty` is a native module, so each platform has to be packaged on that platform. The
+[Build workflow](.github/workflows/build.yml) does this on GitHub Actions for all three OSes —
+run it manually or push a `v*` tag, then download the installers from the run's artifacts.
+
+macOS builds are not code-signed or notarized. After downloading, either right-click the app →
+**Open**, or clear the quarantine flag with `xattr -cr "/Applications/Coding Space.app"`.
 
 ## Codebase Architecture
 

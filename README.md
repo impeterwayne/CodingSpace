@@ -2,6 +2,8 @@
 
 Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, integrate AI agent toolkits (OpenSpec), and operate using embedded or external terminal interfaces.
 
+![Coding Space Interface](assets/screenshot.png)
+
 ## Features
 
 - **Git Worktree Orchestration**: Automated scanning, lifecycle management, and branch/merge syncing directly from the UI.

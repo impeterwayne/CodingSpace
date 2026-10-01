@@ -6,13 +6,19 @@ import {
   fetchProjectStates,
   fetchProjectIssues,
   fetchProjectDetails,
+  fetchWorkspaceProjects,
+  resolvePlaneProjectId,
+  filterPlaneProjects,
   categorizeIssues,
+  getIssueCategory,
+  isOnTestingState,
   generateTaskListMD,
   cleanHTML,
   formatPriority,
   PlaneIssue,
   PlaneState,
   PlaneProject,
+  PlaneConfig,
   EvidenceMedia,
   scrapeLightshotImageURL,
   scrapeStreamableMediaURLs,
@@ -115,6 +121,11 @@ const state: {
     openspecSourcePath?: string;
     autoRefreshCurrentProject?: boolean;
     autoRefreshInterval?: number;
+    planeApiKey?: string;
+    planeBaseUrl?: string;
+    planeWorkspaceSlug?: string;
+    projectPlaneIds?: Record<string, string>;
+    symlinkTargets?: { name: string; targetPath: string }[];
   };
   useExternalWt: boolean;
   workspaceSidebarCollapsed: boolean;
@@ -237,11 +248,8 @@ const dom = {
   planeTableLoading: $('#plane-table-loading'),
   planeStatusBadge: $('#plane-status-badge'),
   settingsPlaneApiKey: $('#settings-plane-api-key'),
-  settingsPlaneBaseUrl: $('#settings-plane-base-url'),
-  settingsPlaneWorkspaceSlug: $('#settings-plane-workspace-slug'),
-  planeWorkspaceSlugInput: $('#plane-workspace-slug-input'),
-  planeProjectIdInput: $('#plane-project-id-input'),
-  btnSavePlaneProjectConfig: $('#btn-save-plane-project-config'),
+  planeProjectSearch: $('#plane-project-search'),
+  planeProjectDropdown: $('#plane-project-dropdown'),
 };
 
 // ── Platform-specific labels ───────────────────────────
@@ -326,8 +334,6 @@ const settingsInputs = [
   dom.settingsAndroidStudioPath,
   dom.settingsVsCodePath,
   dom.settingsPlaneApiKey,
-  dom.settingsPlaneBaseUrl,
-  dom.settingsPlaneWorkspaceSlug,
 ];
 for (const input of settingsInputs) {
   if (input) {
@@ -820,6 +826,12 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
     }), buttonLabel);
 
     if (result.success) {
+      const mainPath = (project.worktrees || []).find((wt) => !wt.bare && wt.path)?.path;
+      if (mainPath) {
+        const planeRoot = joinPath(mainPath, 'plane');
+        const planeStatus = await window.api.checkSymlinkStatus({ worktreePath: mainPath, name: 'plane', targetPath: planeRoot });
+        if (planeStatus?.isRealDirectory) await linkPlaneIntoWorktrees(planeRoot, [wtPath]);
+      }
       if (onSuccess) await onSuccess(selectedBranch);
       showToast(`Worktree created: ${selectedBranch}`, 'success');
       hideModal();
@@ -2375,8 +2387,6 @@ async function saveSettingsFromUI() {
     autoRefreshCurrentProject: dom.settingsAutoRefresh ? dom.settingsAutoRefresh.checked : true,
     autoRefreshInterval: isNaN(intervalVal) || intervalVal < 1 ? 10 : intervalVal,
     planeApiKey: dom.settingsPlaneApiKey ? dom.settingsPlaneApiKey.value.trim() : state.settings?.planeApiKey || '',
-    planeBaseUrl: dom.settingsPlaneBaseUrl ? dom.settingsPlaneBaseUrl.value.trim() : state.settings?.planeBaseUrl || '',
-    planeWorkspaceSlug: dom.settingsPlaneWorkspaceSlug ? dom.settingsPlaneWorkspaceSlug.value.trim() : state.settings?.planeWorkspaceSlug || '',
   };
   state.settings = await window.api.updateSettings(nextSettings);
 }
@@ -2390,8 +2400,6 @@ async function showSettingsScreen() {
     if (dom.settingsAutoRefresh) dom.settingsAutoRefresh.checked = !!state.settings.autoRefreshCurrentProject;
     if (dom.settingsAutoRefreshInterval) dom.settingsAutoRefreshInterval.value = String(state.settings.autoRefreshInterval || 10);
     if (dom.settingsPlaneApiKey) dom.settingsPlaneApiKey.value = state.settings.planeApiKey || '';
-    if (dom.settingsPlaneBaseUrl) dom.settingsPlaneBaseUrl.value = state.settings.planeBaseUrl || 'https://plane.itgproduct.com';
-    if (dom.settingsPlaneWorkspaceSlug) dom.settingsPlaneWorkspaceSlug.value = state.settings.planeWorkspaceSlug || 'product';
   }
 
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
@@ -3290,77 +3298,208 @@ interface PlaneTasksStore {
   searchQuery: string;
   sortBy: string;
   isLoading: boolean;
+  loadedProjectId: string;
+  projects: PlaneProject[];
+  projectsKey: string;
 }
 
 const planeTasksStore: PlaneTasksStore = {
   rawIssues: [],
   stateMap: new Map(),
   projectInfo: null,
+  loadedProjectId: '',
+  projects: [],
+  projectsKey: '',
   filterCategory: 'all',
   searchQuery: '',
   sortBy: 'priority-desc',
   isLoading: false,
 };
 
-function getPlaneConfigForActiveProject(): PlaneConfig {
-  const activeWorktreePath = state.activeWorktreePath;
-  const projectPlaneIds = state.settings?.projectPlaneIds || {};
+// Paths that share one Plane project: the active worktree, the repo root and every sibling worktree.
+function getPlaneCandidatePaths(wtPath: string | null): string[] {
+  if (!wtPath) return [];
+  const project = state.projects?.find((p) => (p.worktrees || []).some((wt) => wt.path === wtPath));
+  const worktreePaths = (project?.worktrees || []).filter((wt) => !wt.bare && wt.path).map((wt) => wt.path);
+  return [...new Set([wtPath, project?.path, ...worktreePaths].filter(Boolean))];
+}
 
-  let projectId = '';
-  if (activeWorktreePath && projectPlaneIds[activeWorktreePath]) {
-    projectId = projectPlaneIds[activeWorktreePath];
-  } else if (dom.planeProjectIdInput && dom.planeProjectIdInput.value.trim()) {
-    projectId = dom.planeProjectIdInput.value.trim();
+function getPlaneConfigForActiveProject(): PlaneConfig {
+  const settings = state.settings || {};
+  return {
+    baseUrl: settings.planeBaseUrl || DEFAULT_PLANE_CONFIG.baseUrl,
+    apiKey: settings.planeApiKey || DEFAULT_PLANE_CONFIG.apiKey,
+    workspaceSlug: settings.planeWorkspaceSlug || DEFAULT_PLANE_CONFIG.workspaceSlug,
+    projectId: resolvePlaneProjectId(settings.projectPlaneIds, getPlaneCandidatePaths(state.activeWorktreePath)),
+  };
+}
+
+function setPlaneStatus(text: string, kind: 'success' | 'warning' | 'info' | 'danger') {
+  if (!dom.planeStatusBadge) return;
+  dom.planeStatusBadge.textContent = text;
+  dom.planeStatusBadge.className = `plane-badge badge-${kind}`;
+}
+
+function renderPlaneTableMessage(html: string) {
+  if (!dom.planeTasksTbody) return;
+  dom.planeTasksTbody.innerHTML = `
+    <tr>
+      <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
+        <div>${html}</div>
+      </td>
+    </tr>
+  `;
+}
+
+function resetPlaneTasks() {
+  planeTasksStore.rawIssues = [];
+  planeTasksStore.stateMap = new Map();
+  planeTasksStore.projectInfo = null;
+  planeTasksStore.loadedProjectId = '';
+  updateCategoryCounts();
+}
+
+// Mirrors herdr-launcher's flow: API key first, then pick the project from the workspace list.
+function showPlaneSetupRequired(cfg: PlaneConfig) {
+  if (!cfg.apiKey) {
+    setPlaneStatus('API Key Required ⚠️', 'warning');
+    renderPlaneTableMessage('Add your Plane API key in <a href="#" data-action="open-settings">Settings → Plane Integration</a> (create one in Plane → Profile settings → API tokens).');
+    dom.planeTasksTbody?.querySelector('[data-action="open-settings"]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showSettingsScreen();
+    });
+  } else {
+    setPlaneStatus('Project Required ⚠️', 'warning');
+    renderPlaneTableMessage('Search for the Plane project of this repo in the <strong>"Plane Project"</strong> box above.');
+  }
+}
+
+function planeProjectLabel(p: PlaneProject) {
+  return p.identifier ? `${p.identifier} — ${p.name}` : p.name;
+}
+
+// Shows the linked project in the search box while it isn't being typed into.
+function syncPlaneProjectSearch(placeholder: string, disabled: boolean) {
+  const input = dom.planeProjectSearch as HTMLInputElement | null;
+  if (!input) return;
+  const { projectId } = getPlaneConfigForActiveProject();
+  const linked = planeTasksStore.projects.find((p) => p.id === projectId);
+  input.placeholder = placeholder;
+  input.disabled = disabled;
+  input.value = linked ? planeProjectLabel(linked) : projectId ? `${projectId} (saved)` : '';
+}
+
+let planeProjectActiveIndex = 0;
+
+function renderPlaneProjectDropdown() {
+  const input = dom.planeProjectSearch as HTMLInputElement | null;
+  const dropdown = dom.planeProjectDropdown as HTMLElement | null;
+  if (!input || !dropdown) return;
+  const { projectId } = getPlaneConfigForActiveProject();
+  const matches = filterPlaneProjects(planeTasksStore.projects, input.value);
+  planeProjectActiveIndex = Math.min(planeProjectActiveIndex, Math.max(matches.length - 1, 0));
+
+  dropdown.innerHTML = matches.length
+    ? matches.map((p, i) => `
+        <button type="button" class="branch-dropdown-item plane-project-option${i === planeProjectActiveIndex ? ' active' : ''}${p.id === projectId ? ' selected' : ''}" data-project-id="${esc(p.id)}">
+          <span class="branch-dropdown-icon">${p.id === projectId ? '✓' : ''}</span>
+          ${p.identifier ? `<span class="plane-project-option-ident">${esc(p.identifier)}</span>` : ''}
+          <span class="plane-project-option-name">${esc(p.name)}</span>
+        </button>
+      `).join('')
+    : `<div class="branch-dropdown-empty">${planeTasksStore.projects.length ? 'No matching projects' : 'No projects in this workspace'}</div>`;
+  dropdown.classList.add('visible');
+
+  dropdown.querySelectorAll('.plane-project-option').forEach((item: HTMLElement) => {
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      selectPlaneProject(item.dataset.projectId || '');
+    });
+  });
+  dropdown.querySelector('.plane-project-option.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+function hidePlaneProjectDropdown() {
+  if (dom.planeProjectDropdown) dom.planeProjectDropdown.classList.remove('visible');
+}
+
+async function selectPlaneProject(projectId: string) {
+  if (!state.activeWorktreePath) {
+    showToast('Please select an active project worktree first', 'error');
+    return;
+  }
+  hidePlaneProjectDropdown();
+  (dom.planeProjectSearch as HTMLInputElement | null)?.blur();
+  if (!projectId || projectId === getPlaneConfigForActiveProject().projectId) {
+    syncPlaneProjectSearch('Search projects by name or identifier…', false);
+    return;
+  }
+  await saveActivePlaneProjectId(projectId);
+  syncPlaneProjectSearch('Search projects by name or identifier…', false);
+  resetPlaneTasks();
+  const project = planeTasksStore.projects.find((p) => p.id === projectId);
+  showToast(`Linked ${project?.name || 'Plane project'} to this repo. Fetching tasks...`, 'success');
+  await fetchAndRenderPlaneTasks();
+}
+
+async function loadPlaneProjectOptions(force = false) {
+  const cfg = getPlaneConfigForActiveProject();
+  if (!cfg.apiKey) {
+    syncPlaneProjectSearch('Set your Plane API key first…', true);
+    return;
   }
 
-  const workspaceSlug = dom.planeWorkspaceSlugInput && dom.planeWorkspaceSlugInput.value.trim()
-    ? dom.planeWorkspaceSlugInput.value.trim()
-    : state.settings?.planeWorkspaceSlug || DEFAULT_PLANE_CONFIG.workspaceSlug;
+  const key = `${cfg.baseUrl}|${cfg.workspaceSlug}|${cfg.apiKey}`;
+  if (force || planeTasksStore.projectsKey !== key) {
+    syncPlaneProjectSearch('Loading projects…', true);
+    try {
+      planeTasksStore.projects = await fetchWorkspaceProjects(cfg);
+      planeTasksStore.projectsKey = key;
+    } catch (err: any) {
+      planeTasksStore.projects = [];
+      planeTasksStore.projectsKey = '';
+      syncPlaneProjectSearch('Failed to load projects', true);
+      setPlaneStatus('Connection Failed 🔴', 'danger');
+      showToast(`Failed to load Plane projects: ${err?.message || String(err)}`, 'error');
+      return;
+    }
+  }
 
-  const baseUrl = state.settings?.planeBaseUrl || DEFAULT_PLANE_CONFIG.baseUrl;
-  const apiKey = state.settings?.planeApiKey || DEFAULT_PLANE_CONFIG.apiKey;
+  syncPlaneProjectSearch('Search projects by name or identifier…', false);
+}
 
-  return {
-    baseUrl,
-    apiKey,
-    workspaceSlug,
-    projectId,
-  };
+// Same storage shape as herdr-launcher's saveWorkspaceProjectId: one entry per repo root and worktree.
+async function saveActivePlaneProjectId(projectId: string) {
+  const paths = getPlaneCandidatePaths(state.activeWorktreePath);
+  const settings = state.settings || {};
+  const nextProjectIds = { ...(settings.projectPlaneIds || {}) };
+  for (const p of paths) {
+    if (projectId) nextProjectIds[p] = projectId;
+    else delete nextProjectIds[p];
+  }
+  state.settings = await window.api.updateSettings({ ...settings, projectPlaneIds: nextProjectIds });
 }
 
 async function showPlaneTaskScreen() {
   const activeWorktreePath = state.activeWorktreePath;
   const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
-
-  const cfg = getPlaneConfigForActiveProject();
-
   if (dom.planeActiveWorktreeName) dom.planeActiveWorktreeName.textContent = activeWorktreeName || 'No active project';
-  if (dom.planeWorkspaceSlugInput) dom.planeWorkspaceSlugInput.value = cfg.workspaceSlug;
-  if (dom.planeProjectIdInput) dom.planeProjectIdInput.value = cfg.projectId;
 
   dom.settingsScreen.classList.add('hidden');
   if (dom.symlinkScreen) dom.symlinkScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.add('hidden');
   if (dom.planeTaskScreen) dom.planeTaskScreen.classList.remove('hidden');
 
-  if (!cfg.projectId) {
-    if (dom.planeStatusBadge) {
-      dom.planeStatusBadge.textContent = 'Project ID Required ⚠️';
-      dom.planeStatusBadge.className = 'plane-badge badge-warning';
-    }
-    if (dom.planeTasksTbody) {
-      dom.planeTasksTbody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
-            <div>Paste your Plane Project UUID in the input above and click <strong>"Save Config"</strong> to fetch tasks.</div>
-          </td>
-        </tr>
-      `;
-    }
+  await loadPlaneProjectOptions();
+
+  const cfg = getPlaneConfigForActiveProject();
+  if (!cfg.apiKey || !cfg.projectId) {
+    resetPlaneTasks();
+    showPlaneSetupRequired(cfg);
     return;
   }
 
-  if (planeTasksStore.rawIssues.length === 0) {
+  if (planeTasksStore.loadedProjectId !== cfg.projectId || planeTasksStore.rawIssues.length === 0) {
     await fetchAndRenderPlaneTasks();
   } else {
     renderPlaneTasksTable();
@@ -3377,21 +3516,8 @@ async function fetchAndRenderPlaneTasks() {
   if (!dom.planeTaskScreen) return;
 
   const cfg = getPlaneConfigForActiveProject();
-  if (!cfg.projectId) {
-    if (dom.planeStatusBadge) {
-      dom.planeStatusBadge.textContent = 'Project ID Required ⚠️';
-      dom.planeStatusBadge.className = 'plane-badge badge-warning';
-    }
-    if (dom.planeTasksTbody) {
-      dom.planeTasksTbody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 40px; color: var(--text-tertiary);">
-            <div>Paste your Plane Project UUID in the input above and click <strong>"Save Config"</strong> to fetch tasks.</div>
-          </td>
-        </tr>
-      `;
-    }
-    showToast('Please paste a Plane Project UUID and click "Save Config"', 'warning');
+  if (!cfg.apiKey || !cfg.projectId) {
+    showPlaneSetupRequired(cfg);
     return;
   }
 
@@ -3412,6 +3538,7 @@ async function fetchAndRenderPlaneTasks() {
     planeTasksStore.stateMap = stateMap;
     planeTasksStore.rawIssues = issues;
     planeTasksStore.projectInfo = projectInfo;
+    planeTasksStore.loadedProjectId = cfg.projectId;
 
     for (const issue of issues) {
       const s = stateMap.get(issue.state);
@@ -3442,7 +3569,7 @@ async function fetchAndRenderPlaneTasks() {
 }
 
 function updateCategoryCounts() {
-  const { backlog, todo, inProgress, done, cancelled } = categorizeIssues(
+  const { backlog, todo, inProgress, onTesting, done, cancelled } = categorizeIssues(
     planeTasksStore.rawIssues,
     planeTasksStore.stateMap
   );
@@ -3456,6 +3583,7 @@ function updateCategoryCounts() {
   setVal('count-backlog', backlog.length);
   setVal('count-todo', todo.length);
   setVal('count-in-progress', inProgress.length);
+  setVal('count-on-testing', onTesting.length);
   setVal('count-done', done.length);
   setVal('count-cancelled', cancelled.length);
 }
@@ -3464,24 +3592,7 @@ function getFilteredAndSortedIssues(): PlaneIssue[] {
   let issues = [...planeTasksStore.rawIssues];
 
   if (planeTasksStore.filterCategory !== 'all') {
-    issues = issues.filter((issue) => {
-      const group = (issue.stateGroup || '').toLowerCase();
-      const name = (issue.stateName || '').toLowerCase();
-      switch (planeTasksStore.filterCategory) {
-        case 'backlog':
-          return group === 'backlog' || name === 'backlog';
-        case 'todo':
-          return group === 'unstarted' || name === 'todo';
-        case 'in_progress':
-          return group === 'started' || name === 'in progress';
-        case 'done':
-          return group === 'completed' || name === 'done';
-        case 'cancelled':
-          return group === 'cancelled' || name === 'cancelled';
-        default:
-          return true;
-      }
-    });
+    issues = issues.filter((issue) => getIssueCategory(issue) === planeTasksStore.filterCategory);
   }
 
   if (planeTasksStore.searchQuery.trim()) {
@@ -3551,7 +3662,8 @@ function renderPlaneTasksTable() {
     const statusGroup = (issue.stateGroup || '').toLowerCase();
 
     let statusBadgeClass = 'badge-neutral';
-    if (statusGroup === 'completed' || statusText.toLowerCase() === 'done') statusBadgeClass = 'badge-success';
+    if (isOnTestingState(statusText)) statusBadgeClass = 'badge-testing';
+    else if (statusGroup === 'completed' || statusText.toLowerCase() === 'done') statusBadgeClass = 'badge-success';
     else if (statusGroup === 'started' || statusText.toLowerCase() === 'in progress') statusBadgeClass = 'badge-info';
     else if (statusGroup === 'unstarted' || statusText.toLowerCase() === 'todo') statusBadgeClass = 'badge-warning';
     else if (statusGroup === 'backlog') statusBadgeClass = 'badge-danger';
@@ -3584,6 +3696,27 @@ function renderPlaneTasksTable() {
   }).join('');
 }
 
+// plane/ lives as a real folder in the project's main worktree and is symlinked into every other worktree.
+function getPlaneWorktreeLayout(wtPath: string) {
+  const project = state.projects?.find((p) => (p.worktrees || []).some((wt) => wt.path === wtPath));
+  const worktrees = (project?.worktrees || []).filter((wt) => !wt.bare && wt.path);
+  const mainPath = worktrees[0]?.path || wtPath;
+  return {
+    mainPath,
+    planeRoot: joinPath(mainPath, 'plane'),
+    linkedPaths: worktrees.map((wt) => wt.path).filter((p) => p !== mainPath),
+  };
+}
+
+async function linkPlaneIntoWorktrees(planeRoot: string, worktreePaths: string[]) {
+  const failures: { path: string; error: string }[] = [];
+  for (const worktreePath of worktreePaths) {
+    const res = await window.api.createSymlink({ worktreePath, name: 'plane', targetPath: planeRoot });
+    if (!res?.success) failures.push({ path: worktreePath, error: res?.error || 'Unknown error' });
+  }
+  return failures;
+}
+
 function openExportPlaneTasksModal() {
   const activeWorktreePath = state.activeWorktreePath;
   if (!activeWorktreePath) {
@@ -3604,48 +3737,86 @@ function openExportPlaneTasksModal() {
   const modalBodyHTML = `
     <div style="display: flex; flex-direction: column; gap: 16px; font-size: 13px;">
       <div>
-        <span style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; display: block; margin-bottom: 10px;">Select Sections to Include in Markdown</span>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="backlog" checked />
-            <span>🔴 <strong>Backlog Tasks</strong> (${categorized.backlog.length})</span>
+        <span style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; letter-spacing: 0.04em; display: block; margin-bottom: 10px;">Select Sections to Include</span>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="backlog" checked />
+              <span class="plane-badge badge-danger">Backlog</span>
+              <span class="export-category-title">Backlog Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.backlog.length}</span>
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="todo" checked />
-            <span>🟡 <strong>Todo Tasks</strong> (${categorized.todo.length})</span>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="todo" checked />
+              <span class="plane-badge badge-warning">Todo</span>
+              <span class="export-category-title">Todo Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.todo.length}</span>
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="in_progress" />
-            <span>🔵 <strong>In Progress Tasks</strong> (${categorized.inProgress.length})</span>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="in_progress" />
+              <span class="plane-badge badge-info">In Progress</span>
+              <span class="export-category-title">In Progress Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.inProgress.length}</span>
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="done" />
-            <span>🟢 <strong>Done Tasks</strong> (${categorized.done.length})</span>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="on_testing" />
+              <span class="plane-badge badge-testing">On Testing</span>
+              <span class="export-category-title">On Testing Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.onTesting.length}</span>
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="cancelled" />
-            <span>⚪ <strong>Cancelled Tasks</strong> (${categorized.cancelled.length})</span>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="done" />
+              <span class="plane-badge badge-success">Done</span>
+              <span class="export-category-title">Done Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.done.length}</span>
+          </label>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="cancelled" />
+              <span class="plane-badge badge-neutral">Cancelled</span>
+              <span class="export-category-title">Cancelled Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.cancelled.length}</span>
           </label>
           ${categorized.other.length > 0 ? `
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500;">
-            <input type="checkbox" class="export-section-checkbox" data-category="other" />
-            <span>❓ <strong>Other / Draft Tasks</strong> (${categorized.other.length})</span>
+          <label class="export-category-item">
+            <div class="export-category-left">
+              <input type="checkbox" class="export-section-checkbox" data-category="other" />
+              <span class="plane-badge badge-neutral">Other</span>
+              <span class="export-category-title">Other / Draft Tasks</span>
+            </div>
+            <span class="export-category-count">${categorized.other.length}</span>
           </label>
           ` : ''}
         </div>
       </div>
 
-      <div id="export-section-summary" style="padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
-        <strong>Target File:</strong> <code>plane/TASK_LIST.md</code> <br />
-        <span id="export-task-count-text">0 tasks will be exported.</span>
+      <div class="export-summary-box">
+        <div class="export-summary-target">
+          <span class="export-summary-icon">${icons.folder}</span>
+          <span class="export-summary-label">Target File:</span>
+          <code class="export-summary-code">plane/TASK_LIST.md</code>
+        </div>
+        <div class="export-summary-count" id="export-task-count-text">
+          0 tasks will be exported.
+        </div>
       </div>
     </div>
   `;
 
-  dom.modalTitle.textContent = '📥 Export Task List Options';
+  dom.modalTitle.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px;"><span style="color: var(--accent-light, #fff); display: inline-flex;">${icons.download}</span><span>Export Task List</span></span>`;
   dom.modalBody.innerHTML = modalBodyHTML;
   if (dom.modal) {
-    dom.modal.classList.add('export-modal');
+    dom.modal.classList.add('export-options-modal');
   }
   showModal();
 
@@ -3667,6 +3838,7 @@ function openExportPlaneTasksModal() {
     if (checked.has('backlog')) totalToExport += activeCategorized.backlog.length;
     if (checked.has('todo')) totalToExport += activeCategorized.todo.length;
     if (checked.has('in_progress')) totalToExport += activeCategorized.inProgress.length;
+    if (checked.has('on_testing')) totalToExport += activeCategorized.onTesting.length;
     if (checked.has('done')) totalToExport += activeCategorized.done.length;
     if (checked.has('cancelled')) totalToExport += activeCategorized.cancelled.length;
     if (checked.has('other')) totalToExport += activeCategorized.other.length;
@@ -3685,7 +3857,7 @@ function openExportPlaneTasksModal() {
 
   const footer = configureModalFooter([
     { id: 'export-btn-cancel', label: 'Cancel', kind: 'secondary' },
-    { id: 'export-btn-submit', label: '🚀 Export', kind: 'primary' },
+    { id: 'export-btn-submit', label: `${icons.download} Export`, kind: 'primary' },
   ]);
 
   if (footer['export-btn-cancel']) {
@@ -3705,9 +3877,16 @@ function openExportPlaneTasksModal() {
       if (checked.has('backlog')) filteredForExport.push(...currentCategorized.backlog);
       if (checked.has('todo')) filteredForExport.push(...currentCategorized.todo);
       if (checked.has('in_progress')) filteredForExport.push(...currentCategorized.inProgress);
+      if (checked.has('on_testing')) filteredForExport.push(...currentCategorized.onTesting);
       if (checked.has('done')) filteredForExport.push(...currentCategorized.done);
       if (checked.has('cancelled')) filteredForExport.push(...currentCategorized.cancelled);
       if (checked.has('other')) filteredForExport.push(...currentCategorized.other);
+
+      if (dom.modal) {
+        dom.modal.classList.remove('export-options-modal');
+        dom.modal.classList.add('export-modal');
+      }
+      dom.modalTitle.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px;"><span style="color: var(--accent-light, #fff); display: inline-flex;">${icons.download}</span><span>Exporting Tasks...</span></span>`;
 
       // Transition modal into Export Progress Console UI
       dom.modalBody.innerHTML = `
@@ -3752,34 +3931,24 @@ function openExportPlaneTasksModal() {
           entry.className = `export-log-entry ${level}`;
           entry.innerHTML = `<span style="opacity: 0.5;">[${timeStr}]</span> ${msg}`;
           logTerminal.appendChild(entry);
-          logTerminal.scrollTop = logTerminal.scrollHeight;
+          logTerminal.scrollHeight && (logTerminal.scrollTop = logTerminal.scrollHeight);
         }
         await new Promise((r) => setTimeout(r, 20));
       };
 
       try {
-        await appendLog('🚀 Initializing plane/ export directory structure...', 'info', 5);
+        const { mainPath, planeRoot, linkedPaths } = getPlaneWorktreeLayout(activeWorktreePath);
+        await appendLog(`[INIT] Initializing plane/ export directory in main worktree: ${esc(mainPath)}`, 'info', 5);
         await new Promise((r) => setTimeout(r, 100));
 
-        await appendLog('🙈 Excluding plane/ directory in .git/info/exclude...', 'info', 8);
-        try {
-          await window.api.updateGitExclude({
-            worktreePath: activeWorktreePath,
-            patterns: ['plane/', 'plane/*'],
-            action: 'add',
-          });
-        } catch (e) {
-          // Ignore git exclude errors
-        }
-
-        await appendLog('📁 Saving plane/raw/ metadata backups...', 'info', 10);
+        await appendLog('[METADATA] Saving plane/raw/ metadata backups...', 'info', 10);
         const rawIssuesJSON = JSON.stringify(planeTasksStore.rawIssues, null, 2);
         const rawStatesJSON = JSON.stringify(Array.from(planeTasksStore.stateMap.values()), null, 2);
         
-        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/raw/issues.json', content: rawIssuesJSON });
-        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/raw/states.json', content: rawStatesJSON });
+        await window.api.writeProjectFile({ worktreePath: mainPath, filename: 'plane/raw/issues.json', content: rawIssuesJSON });
+        await window.api.writeProjectFile({ worktreePath: mainPath, filename: 'plane/raw/states.json', content: rawStatesJSON });
 
-        await appendLog('🔍 Parsing and downloading evidence media (prnt.sc screenshots & Streamable MP4 videos)...', 'info', 15);
+        await appendLog('[SCAN] Parsing and downloading evidence media (Lightshot screenshots & Streamable MP4 videos)...', 'info', 15);
 
         const mediaMap = new Map<number, EvidenceMedia[]>();
         let screenshotCount = 0;
@@ -3801,19 +3970,19 @@ function openExportPlaneTasksModal() {
               const mediaId = webUrl.split('/').pop()!;
               if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
 
-              const targetFilePath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}.png`);
+              const targetFilePath = joinPath(planeRoot, 'evidence', taskID, `${mediaId}.png`);
               const relLocalPath = `./evidence/${taskID}/${mediaId}.png`;
 
-              await appendLog(`📸 Fetching Lightshot screenshot for ${taskID}: ${mediaId}...`, 'screenshot');
+              await appendLog(`[FETCH] Lightshot screenshot for ${taskID}: ${mediaId}...`, 'screenshot');
               
               const imgUrl = await scrapeLightshotImageURL(webUrl);
               if (imgUrl) {
                 const dlRes = await window.api.downloadFile({ url: imgUrl, targetFilePath });
                 if (dlRes?.success) {
                   if (dlRes.cached) {
-                    await appendLog(`⚡ Cached screenshot: ${mediaId}.png`, 'cache');
+                    await appendLog(`[CACHE] Cached screenshot: ${mediaId}.png`, 'cache');
                   } else {
-                    await appendLog(`✅ Downloaded screenshot: ${mediaId}.png`, 'success');
+                    await appendLog(`[DOWNLOAD] Downloaded screenshot: ${mediaId}.png`, 'success');
                   }
                   taskMediaList.push({
                     type: 'image',
@@ -3834,12 +4003,12 @@ function openExportPlaneTasksModal() {
               const mediaId = webUrl.split('/').pop()!;
               if (taskMediaList.some((m) => m.mediaId === mediaId)) continue;
 
-              const targetVideoPath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}.mp4`);
-              const targetPosterPath = joinPath(activeWorktreePath, 'plane', 'evidence', taskID, `${mediaId}_poster.jpg`);
+              const targetVideoPath = joinPath(planeRoot, 'evidence', taskID, `${mediaId}.mp4`);
+              const targetPosterPath = joinPath(planeRoot, 'evidence', taskID, `${mediaId}_poster.jpg`);
               const relVideoPath = `./evidence/${taskID}/${mediaId}.mp4`;
               const relPosterPath = `./evidence/${taskID}/${mediaId}_poster.jpg`;
 
-              await appendLog(`🎥 Fetching Streamable full MP4 video for ${taskID}: ${mediaId}...`, 'video');
+              await appendLog(`[FETCH] Streamable full MP4 video for ${taskID}: ${mediaId}...`, 'video');
 
               const { videoUrl, posterUrl } = await scrapeStreamableMediaURLs(mediaId, webUrl);
               if (posterUrl) {
@@ -3850,9 +4019,9 @@ function openExportPlaneTasksModal() {
                 const dlRes = await window.api.downloadFile({ url: videoUrl, targetFilePath: targetVideoPath });
                 if (dlRes?.success) {
                   if (dlRes.cached) {
-                    await appendLog(`⚡ Cached full video: ${mediaId}.mp4`, 'cache');
+                    await appendLog(`[CACHE] Cached full video: ${mediaId}.mp4`, 'cache');
                   } else {
-                    await appendLog(`✅ Downloaded full MP4 video: ${mediaId}.mp4`, 'success');
+                    await appendLog(`[DOWNLOAD] Downloaded full MP4 video: ${mediaId}.mp4`, 'success');
                   }
                   taskMediaList.push({
                     type: 'video',
@@ -3877,33 +4046,41 @@ function openExportPlaneTasksModal() {
           }
         }
 
-        await appendLog(`Download summary: ${screenshotCount} screenshot(s), ${videoCount} full MP4 video(s).`, 'info', 88);
-        await appendLog('📝 Generating comprehensive Markdown task checklist...', 'info', 92);
+        await appendLog(`[SUMMARY] Downloaded ${screenshotCount} screenshot(s), ${videoCount} full MP4 video(s).`, 'info', 88);
+        await appendLog('[MARKDOWN] Generating comprehensive Markdown task checklist...', 'info', 92);
 
         const cfg = getPlaneConfigForActiveProject();
         const mdContent = generateTaskListMD(cfg, filteredForExport, planeTasksStore.stateMap, mediaMap, planeTasksStore.projectInfo);
 
-        await appendLog('💾 Writing plane/TASK_LIST.md...', 'info', 96);
-        await window.api.writeProjectFile({ worktreePath: activeWorktreePath, filename: 'plane/TASK_LIST.md', content: mdContent });
+        await appendLog('[SAVE] Writing plane/TASK_LIST.md...', 'info', 96);
+        await window.api.writeProjectFile({ worktreePath: mainPath, filename: 'plane/TASK_LIST.md', content: mdContent });
 
-        await appendLog('🎉 SUCCESS! All tasks & offline media references written to plane/TASK_LIST.md', 'success', 100);
+        if (linkedPaths.length > 0) {
+          await appendLog(`[SYMLINK] Symlinking plane/ into ${linkedPaths.length} other worktree(s)...`, 'info', 98);
+          const failures = await linkPlaneIntoWorktrees(planeRoot, linkedPaths);
+          for (const f of failures) {
+            await appendLog(`[WARN] Could not link plane/ in ${esc(f.path)}: ${esc(f.error)}`, 'error');
+          }
+        }
 
+        await appendLog('[COMPLETE] All tasks & offline media references written to plane/TASK_LIST.md', 'success', 100);
+
+        dom.modalTitle.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px;"><span style="color: var(--accent-light, #fff); display: inline-flex;">${icons.download}</span><span>Export Complete</span></span>`;
         const doneFooter = configureModalFooter([
-          { id: 'export-btn-open-dir', label: '📁 Open plane/ Folder', kind: 'secondary' },
+          { id: 'export-btn-open-dir', label: `${icons.folder} Open Folder`, kind: 'secondary' },
           { id: 'export-btn-done', label: 'Done', kind: 'primary' },
         ]);
         if (doneFooter['export-btn-open-dir']) {
           doneFooter['export-btn-open-dir'].addEventListener('click', () => {
-            if (activeWorktreePath) {
-              window.api.openInExplorer(joinPath(activeWorktreePath, 'plane'));
-            }
+            window.api.openInExplorer(planeRoot);
           });
         }
         if (doneFooter['export-btn-done']) {
           doneFooter['export-btn-done'].addEventListener('click', () => hideModal());
         }
       } catch (err: any) {
-        await appendLog(`❌ Export Error: ${err?.message || String(err)}`, 'error', 100);
+        await appendLog(`[ERROR] Export Error: ${err?.message || String(err)}`, 'error', 100);
+        dom.modalTitle.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px;"><span style="color: var(--danger-default, #f87171); display: inline-flex;">${icons.close}</span><span>Export Failed</span></span>`;
         const errFooter = configureModalFooter([
           { id: 'export-btn-close', label: 'Close', kind: 'secondary' },
         ]);
@@ -3917,43 +4094,43 @@ function openExportPlaneTasksModal() {
 
 // ── Bind Plane Task Management Listeners ────────────────────
 if (dom.btnPlaneTasks) {
-  dom.btnPlaneTasks.addEventListener('click', showPlaneTaskScreen);
+  dom.btnPlaneTasks.addEventListener('click', () => showPlaneTaskScreen());
 }
 
 if (dom.btnClosePlaneTaskScreen) {
   dom.btnClosePlaneTaskScreen.addEventListener('click', hidePlaneTaskScreen);
 }
 
-if (dom.btnSavePlaneProjectConfig) {
-  dom.btnSavePlaneProjectConfig.addEventListener('click', async () => {
-    const activeWorktreePath = state.activeWorktreePath;
-    if (!activeWorktreePath) {
-      showToast('Please select an active project worktree first', 'error');
-      return;
+if (dom.planeProjectSearch) {
+  const input = dom.planeProjectSearch as HTMLInputElement;
+  // Focus clears the box to show the full list; blur puts the linked project's label back.
+  input.addEventListener('focus', () => {
+    input.value = '';
+    planeProjectActiveIndex = 0;
+    renderPlaneProjectDropdown();
+  });
+  input.addEventListener('input', () => {
+    planeProjectActiveIndex = 0;
+    renderPlaneProjectDropdown();
+  });
+  input.addEventListener('blur', () => {
+    hidePlaneProjectDropdown();
+    syncPlaneProjectSearch(input.placeholder, input.disabled);
+  });
+  input.addEventListener('keydown', (e) => {
+    const items = dom.planeProjectDropdown?.querySelectorAll('.plane-project-option') || [];
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) return;
+      planeProjectActiveIndex = (planeProjectActiveIndex + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      renderPlaneProjectDropdown();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = items[planeProjectActiveIndex] as HTMLElement | undefined;
+      if (item) selectPlaneProject(item.dataset.projectId || '');
+    } else if (e.key === 'Escape') {
+      input.blur();
     }
-
-    const projectId = dom.planeProjectIdInput ? dom.planeProjectIdInput.value.trim() : '';
-    const workspaceSlug = dom.planeWorkspaceSlugInput ? dom.planeWorkspaceSlugInput.value.trim() : '';
-
-    if (!projectId) {
-      showToast('Please enter a valid Plane Project ID', 'warning');
-      return;
-    }
-
-    const currentProjectIds = state.settings?.projectPlaneIds || {};
-    const nextProjectIds = {
-      ...currentProjectIds,
-      [activeWorktreePath]: projectId,
-    };
-
-    state.settings = await window.api.updateSettings({
-      ...state.settings,
-      planeWorkspaceSlug: workspaceSlug || state.settings?.planeWorkspaceSlug || 'product',
-      projectPlaneIds: nextProjectIds,
-    });
-
-    showToast('Saved Project ID config! Fetching tasks...', 'success');
-    await fetchAndRenderPlaneTasks();
   });
 }
 

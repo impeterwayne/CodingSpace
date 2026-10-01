@@ -14,11 +14,13 @@
   --bg-input-focus: #111111;
   --bg-sidebar: #000000;
 
-  --accent: #6c5ce7;
-  --accent-light: #a29bfe;
-  --accent-dim: rgba(108, 92, 231, 0.10);
-  --accent-glow: rgba(108, 92, 231, 0.15);
-  --accent-gradient: linear-gradient(135deg, #6c5ce7, #a29bfe);
+  --accent: #ffffff;
+  --accent-contrast: #000000;
+  --accent-default: var(--accent);
+  --accent-light: #e5e5e5;
+  --accent-dim: rgba(255, 255, 255, 0.10);
+  --accent-glow: rgba(255, 255, 255, 0.15);
+  --accent-gradient: linear-gradient(135deg, #ffffff, #d4d4d4);
 
   --green: #00d2a0;
   --green-dim: rgba(0, 210, 160, 0.10);
@@ -31,15 +33,15 @@
   --cyan: #00cec9;
   --yellow: #ffeaa7;
 
-  --text-primary: #f5f4fa;
-  --text-secondary: #b2afd2;
-  --text-muted: #83809e;
+  --text-primary: #f5f5f5;
+  --text-secondary: #b3b3b3;
+  --text-muted: #858585;
   --text-accent: var(--accent-light);
 
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-default: rgba(255, 255, 255, 0.07);
   --border-strong: rgba(255, 255, 255, 0.12);
-  --border-accent: rgba(108, 92, 231, 0.25);
+  --border-accent: rgba(255, 255, 255, 0.25);
   --border-contrast-white: rgba(255, 255, 255, 0.25);
 
   --radius-xs: 4px;
@@ -51,7 +53,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 40px rgba(108, 92, 231, 0.06);
+  --shadow-glow: 0 0 40px rgba(255, 255, 255, 0.06);
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
@@ -71,13 +73,13 @@
   --control-border-soft: rgba(255,255,255,0.07);
   --control-border-soft-strong: rgba(255,255,255,0.12);
   --control-bg-ghost-hover: rgba(255,255,255,0.06);
-  --control-bg-accent-soft: rgba(108, 92, 231, 0.12);
-  --control-surface-menu: #1e1e2e;
+  --control-bg-accent-soft: rgba(255, 255, 255, 0.12);
+  --control-surface-menu: #1a1a1a;
   --control-surface-menu-hover: rgba(255,255,255,0.07);
   --control-row-hover: rgba(255,255,255,0.03);
-  --focus-ring-color: rgba(126, 162, 255, 0.95);
-  --focus-ring-border: rgba(126, 162, 255, 0.55);
-  --focus-ring-shadow: 0 0 0 3px rgba(126, 162, 255, 0.14);
+  --focus-ring-color: rgba(255, 255, 255, 0.95);
+  --focus-ring-border: rgba(255, 255, 255, 0.55);
+  --focus-ring-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
   --panel-padding-md: 16px;
   --panel-padding-lg: 22px;
   --section-gap-sm: 8px;
@@ -174,7 +176,7 @@ body {
   display: flex; align-items: center; justify-content: center;
   background: var(--accent-gradient);
   border-radius: var(--radius-sm);
-  color: white;
+  color: var(--accent-contrast);
 }
 .app-title {
   font-size: 12.5px;
@@ -740,9 +742,9 @@ img[src*="windows-terminal"] {
   color: var(--text-primary);
 }
 .terminal-tab.active {
-  background: rgba(108, 92, 231, 0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
-  border-left-color: #6c5ce7;
+  border-left-color: #ffffff;
 }
 .terminal-tab.active::after {
   content: none;
@@ -751,7 +753,7 @@ img[src*="windows-terminal"] {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  color: #6c5ce7;
+  color: #ffffff;
 }
 .terminal-tab-icon.opencode-icon,
 .terminal-tab-icon.claude-icon,
@@ -808,7 +810,7 @@ img[src*="windows-terminal"] {
   border-bottom: 2px solid transparent;
 }
 .terminal-tabs.collapsed .terminal-tab.active {
-  border-bottom-color: #6c5ce7;
+  border-bottom-color: #ffffff;
 }
 
 .brand-logo-btn {
@@ -1041,7 +1043,7 @@ img[src*="windows-terminal"] {
 
 .workspace-toggle input:checked + .workspace-toggle-slider::after {
   transform: translateX(14px);
-  background: #fff;
+  background: var(--accent-contrast);
 }
 
 .workspace-toggle-label {
@@ -1147,7 +1149,7 @@ img[src*="windows-terminal"] {
 .tab-dropdown-item {
   gap: var(--control-gap-md);
   padding: 8px var(--control-padding-x-md);
-  color: #b0aec0;
+  color: #b0b0b0;
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
@@ -1291,7 +1293,7 @@ img[src*="windows-terminal"] {
 .welcome-glow {
   position: absolute;
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(108,92,231,0.05) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -1322,15 +1324,15 @@ img[src*="windows-terminal"] {
   padding: 7px 14px;
   background: var(--accent-gradient);
   border: none;
-  color: white;
+  color: var(--accent-contrast);
   font-family: var(--font-sans);
   font-size: 12px; font-weight: 600;
   transition: background var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
-  box-shadow: 0 2px 12px rgba(108,92,231,0.2);
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.2);
 }
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(108,92,231,0.3);
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.3);
 }
 .btn-primary:active { transform: translateY(0); }
 .btn-primary.btn-small { padding: 6px 12px; font-size: 11px; }
@@ -1387,7 +1389,7 @@ img[src*="windows-terminal"] {
 }
 .wt-btn.accent:hover {
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   border-color: var(--accent);
 }
 .wt-btn.green {
@@ -1545,7 +1547,7 @@ img[src*="windows-terminal"] {
   flex-shrink: 0;
 }
 .branch-chip-badge.existing {
-  background: rgba(108,92,231,0.15);
+  background: rgba(255, 255, 255, 0.15);
   color: var(--accent-light);
 }
 .branch-chip-badge.new {
@@ -1603,7 +1605,7 @@ img[src*="windows-terminal"] {
 .branch-dropdown-item {
   gap: 8px;
   padding: 7px var(--control-padding-x-sm);
-  color: #b0aec0;
+  color: #b0b0b0;
   font-family: var(--font-mono);
   font-size: 12px;
   cursor: pointer;
@@ -1643,7 +1645,7 @@ img[src*="windows-terminal"] {
   color: #69f0ae;
 }
 .branch-dropdown-item mark {
-  background: rgba(108,92,231,0.25);
+  background: rgba(255, 255, 255, 0.25);
   color: var(--accent-light);
   border-radius: 2px;
   padding: 0 1px;
@@ -1834,7 +1836,7 @@ img[src*="windows-terminal"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(108, 92, 231, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .settings-card-title {
@@ -1942,7 +1944,7 @@ img[src*="windows-terminal"] {
 
 .switch-toggle input:checked + .switch-slider:before {
   transform: translateX(18px);
-  background-color: #ffffff;
+  background-color: var(--accent-contrast);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
@@ -2059,7 +2061,8 @@ img[src*="windows-terminal"] {
   min-width: 0;
 }
 .symlink-checkbox,
-.agent-toolkit-checkbox {
+.agent-toolkit-checkbox,
+.export-section-checkbox {
   appearance: none;
   width: 16px;
   height: 16px;
@@ -2071,26 +2074,30 @@ img[src*="windows-terminal"] {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 .symlink-checkbox:checked,
-.agent-toolkit-checkbox:checked {
+.agent-toolkit-checkbox:checked,
+.export-section-checkbox:checked {
   background: var(--accent-default);
   border-color: var(--accent-default);
 }
 .symlink-checkbox:checked::after,
-.agent-toolkit-checkbox:checked::after {
+.agent-toolkit-checkbox:checked::after,
+.export-section-checkbox:checked::after {
   content: "";
   width: 4px;
   height: 8px;
-  border: solid white;
+  border: solid var(--accent-contrast);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg) translate(-0.5px, -0.5px);
 }
 .symlink-checkbox:focus-visible,
-.agent-toolkit-checkbox:focus-visible {
+.agent-toolkit-checkbox:focus-visible,
+.export-section-checkbox:focus-visible {
   border-color: var(--accent-default);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
 }
 .symlink-info {
   display: flex;
@@ -2177,6 +2184,29 @@ img[src*="windows-terminal"] {
 }
 
 /* ─── Plane Task Management Screen Styles ─── */
+#plane-task-screen {
+  overflow: hidden;
+}
+
+.plane-task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-default);
+  padding: 24px 40px;
+  background: var(--bg-primary);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.plane-task-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 40px 40px 40px;
+  display: flex;
+  flex-direction: column;
+}
+
 .plane-setup-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -2270,9 +2300,28 @@ img[src*="windows-terminal"] {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.plane-project-option.active {
+  background: var(--control-surface-menu-hover);
+  color: #e8e8e8;
+}
+.plane-project-option.selected .branch-dropdown-icon {
+  color: var(--accent-light);
+}
+.plane-project-option-ident {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.plane-project-option-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+}
+
 .plane-project-id-field:focus {
-  border-color: var(--accent-default, #6366f1);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  border-color: var(--accent-default);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
 }
 
 .plane-setup-actions {
@@ -2308,6 +2357,29 @@ img[src*="windows-terminal"] {
   font-weight: 600;
 }
 
+.plane-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+}
+
+.plane-search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.plane-search-wrapper:focus-within .plane-search-icon {
+  color: var(--text-secondary);
+}
+
+.plane-preview-icon {
+  color: var(--text-secondary);
+}
+
 .plane-filter-pill {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -2325,9 +2397,9 @@ img[src*="windows-terminal"] {
   color: var(--text-default);
 }
 .plane-filter-pill.active {
-  background: var(--accent-default, #6366f1);
-  border-color: var(--accent-default, #6366f1);
-  color: #ffffff;
+  background: var(--accent-default);
+  border-color: var(--accent-default);
+  color: var(--accent-contrast);
 }
 
 #plane-tasks-table tbody tr {
@@ -2367,6 +2439,11 @@ img[src*="windows-terminal"] {
   background: rgba(59, 130, 246, 0.15);
   color: rgb(96, 165, 250);
 }
+.plane-badge.badge-testing {
+  background: rgba(168, 85, 247, 0.15);
+  color: rgb(192, 132, 252);
+}
+
 .plane-badge.badge-neutral {
   background: rgba(107, 114, 128, 0.15);
   color: rgb(156, 163, 175);
@@ -2441,6 +2518,89 @@ img[src*="windows-terminal"] {
 .modal.export-modal .export-log-terminal {
   height: 320px;
   font-size: 12px;
+}
+
+.modal.export-options-modal {
+  width: 500px;
+  max-width: 92vw;
+}
+
+.export-category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.export-category-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+  border-color: var(--border-default);
+}
+
+.export-category-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.export-category-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.export-category-count {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  font-weight: 500;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.export-summary-box {
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.export-summary-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.export-summary-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.export-summary-count {
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 

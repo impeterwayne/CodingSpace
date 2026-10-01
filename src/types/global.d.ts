@@ -56,6 +56,11 @@ declare global {
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
+        planeApiKey?: string;
+        planeBaseUrl?: string;
+        planeWorkspaceSlug?: string;
+        projectPlaneIds?: Record<string, string>;
+        symlinkTargets?: { name: string; targetPath: string }[];
       }>;
       updateSettings: (settings: {
         subworktreeBranchParents?: Record<string, string>;
@@ -66,6 +71,11 @@ declare global {
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
+        planeApiKey?: string;
+        planeBaseUrl?: string;
+        planeWorkspaceSlug?: string;
+        projectPlaneIds?: Record<string, string>;
+        symlinkTargets?: { name: string; targetPath: string }[];
       }) => Promise<{
         subworktreeBranchParents?: Record<string, string>;
         vscodePath?: string;
@@ -75,6 +85,11 @@ declare global {
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
+        planeApiKey?: string;
+        planeBaseUrl?: string;
+        planeWorkspaceSlug?: string;
+        projectPlaneIds?: Record<string, string>;
+        symlinkTargets?: { name: string; targetPath: string }[];
       }>;
       selectExecutable: () => Promise<string | null>;
       detectIntegrationPaths: () => Promise<{

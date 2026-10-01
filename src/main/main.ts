@@ -236,7 +236,7 @@ function createWindow() {
     height: 920,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#08080d',
+    backgroundColor: '#000000',
     // macOS keeps its native traffic-light buttons inside the custom titlebar;
     // Windows/Linux go fully frameless and use the renderer's own window controls.
     ...(isMac

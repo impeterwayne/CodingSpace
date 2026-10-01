@@ -211,14 +211,6 @@
                 <label class="form-label">Plane API Key</label>
                 <input type="password" id="settings-plane-api-key" class="settings-input" placeholder="plane_api_..." autocomplete="off" spellcheck="false" />
               </div>
-              <div class="form-group-col">
-                <label class="form-label">Plane Base URL</label>
-                <input type="text" id="settings-plane-base-url" class="settings-input" placeholder="https://plane.itgproduct.com" autocomplete="off" spellcheck="false" />
-              </div>
-              <div class="form-group-col">
-                <label class="form-label">Default Workspace Slug</label>
-                <input type="text" id="settings-plane-workspace-slug" class="settings-input" placeholder="product" autocomplete="off" spellcheck="false" />
-              </div>
             </div>
           </div>
 
@@ -345,21 +337,20 @@
 
       <!-- ═══ Center — Plane Task Management Screen ═══ -->
       <div id="plane-task-screen" class="hidden">
-        <div class="settings-container">
-          <header class="settings-header">
-            <div class="settings-title-group">
-              <h2 class="settings-title" style="display: flex; align-items: center; gap: 10px;">
-                <span>Plane Task Management</span>
-                <span id="plane-status-badge" class="plane-badge badge-success" style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 12px;">Connected 🟢</span>
-              </h2>
-              <p class="settings-subtitle">Preview, filter, sort, and export Plane project tasks directly to your project workspace.</p>
-            </div>
-            <button type="button" class="btn-close-settings" id="btn-close-plane-task-screen" title="Close Plane Tasks" aria-label="Close Plane Tasks">
-              <img src="icons/close.svg" width="16" height="16" alt="" />
-            </button>
-          </header>
+        <header class="settings-header plane-task-header">
+          <div class="settings-title-group">
+            <h2 class="settings-title" style="display: flex; align-items: center; gap: 10px;">
+              <span>Plane Task Management</span>
+              <span id="plane-status-badge" class="plane-badge badge-success" style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 12px;">Connected 🟢</span>
+            </h2>
+          </div>
+          <button type="button" class="btn-close-settings" id="btn-close-plane-task-screen" title="Close Plane Tasks" aria-label="Close Plane Tasks">
+            <img src="icons/close.svg" width="16" height="16" alt="" />
+          </button>
+        </header>
 
-          <!-- Plane Project Setup & Actions Toolbar -->
+        <div class="plane-task-body">
+          <!-- Plane Project Setup -->
           <div class="plane-setup-card">
             <div class="plane-setup-content">
               <!-- Active Worktree Info -->
@@ -371,32 +362,16 @@
                 </div>
               </div>
 
-              <!-- Plane Project ID Field -->
+              <!-- Plane Project Picker (saved for the whole repo: main worktree + every linked worktree) -->
               <div class="plane-setup-input-group">
-                <label for="plane-project-id-input" class="plane-setup-label">
-                  <span>Plane Project ID</span>
-                  <span class="plane-setup-sublabel">(Per-project UUID)</span>
+                <label for="plane-project-search" class="plane-setup-label">
+                  <span>Plane Project</span>
                 </label>
-                <div class="plane-input-wrapper">
-                  <input type="text" id="plane-project-id-input" class="settings-input plane-project-id-field" placeholder="Paste Plane Project UUID here..." value="" autocomplete="off" spellcheck="false" />
+                <div class="plane-input-wrapper branch-combo">
+                  <input type="text" id="plane-project-search" class="settings-input plane-project-id-field" placeholder="Set your Plane API key first…" disabled autocomplete="off" spellcheck="false" />
+                  <div id="plane-project-dropdown" class="branch-combo-dropdown"></div>
                 </div>
               </div>
-            </div>
-
-            <!-- Action Buttons Toolbar -->
-            <div class="plane-setup-actions">
-              <button type="button" class="btn-secondary plane-action-btn" id="btn-save-plane-project-config" title="Save Project ID for active worktree">
-                <img src="icons/check.svg" width="14" height="14" alt="" />
-                <span>Save Config</span>
-              </button>
-              <button type="button" class="btn-secondary plane-action-btn" id="btn-refresh-plane-tasks" title="Fetch latest tasks from Plane REST API">
-                <img src="icons/refresh.svg" width="14" height="14" alt="" />
-                <span>Fetch Tasks</span>
-              </button>
-              <button type="button" class="btn-primary plane-action-btn plane-action-btn-primary" id="btn-export-plane-tasks" title="Export tasks to plane/TASK_LIST.md">
-                <img src="icons/download.svg" width="14" height="14" alt="" />
-                <span>Export</span>
-              </button>
             </div>
           </div>
 
@@ -408,13 +383,17 @@
               <button type="button" class="plane-filter-pill" data-category="backlog">🔴 Backlog (<span id="count-backlog">0</span>)</button>
               <button type="button" class="plane-filter-pill" data-category="todo">🟡 Todo (<span id="count-todo">0</span>)</button>
               <button type="button" class="plane-filter-pill" data-category="in_progress">🔵 In Progress (<span id="count-in-progress">0</span>)</button>
+              <button type="button" class="plane-filter-pill" data-category="on_testing">🟣 On Testing (<span id="count-on-testing">0</span>)</button>
               <button type="button" class="plane-filter-pill" data-category="done">🟢 Done (<span id="count-done">0</span>)</button>
               <button type="button" class="plane-filter-pill" data-category="cancelled">⚪ Cancelled (<span id="count-cancelled">0</span>)</button>
             </div>
 
             <!-- Search & Sorting Toolbar -->
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <input type="text" id="plane-search-input" class="settings-input" placeholder="🔍 Search tasks by ID, name, or keywords..." style="flex: 1; min-width: 260px; height: 34px; font-size: 13px;" />
+              <div class="plane-search-wrapper">
+                <img src="icons/search.svg" width="14" height="14" alt="" class="plane-search-icon" />
+                <input type="text" id="plane-search-input" class="settings-input" placeholder="Search tasks by ID, name, or keywords..." style="width: 100%; height: 34px; font-size: 13px; padding-left: 32px;" />
+              </div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <label style="font-size: 12px; color: var(--text-secondary); white-space: nowrap;">Sort By:</label>
                 <select id="plane-sort-select" class="settings-input" style="height: 34px; font-size: 12px; padding: 0 10px; cursor: pointer;">
@@ -427,13 +406,26 @@
                 </select>
               </div>
             </div>
+
+            <!-- Action Buttons Row -->
+            <div class="plane-setup-actions">
+              <button type="button" class="btn-secondary plane-action-btn" id="btn-refresh-plane-tasks" title="Fetch latest tasks from Plane REST API">
+                <img src="icons/refresh.svg" width="14" height="14" alt="" />
+                <span>Fetch Tasks</span>
+              </button>
+              <button type="button" class="btn-primary plane-action-btn plane-action-btn-primary" id="btn-export-plane-tasks" title="Export tasks to plane/TASK_LIST.md">
+                <img src="icons/download.svg" width="14" height="14" alt="" />
+                <span>Export</span>
+              </button>
+            </div>
           </div>
 
           <!-- Table Toolbar & Interactive Table -->
           <div class="settings-card" style="width: 100%; margin: 0; padding: 0; overflow: hidden;">
             <div style="padding: 12px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">📋 Task List Preview</span>
+                <img src="icons/task.svg" width="14" height="14" alt="" class="plane-preview-icon" />
+                <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Task List Preview</span>
               </div>
               <div id="plane-table-loading" class="spinner hidden" style="width: 16px; height: 16px; border-width: 2px;"></div>
             </div>

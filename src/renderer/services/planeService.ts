@@ -51,7 +51,7 @@ export const DEFAULT_PLANE_CONFIG: PlaneConfig = {
   baseUrl: 'https://plane.itgproduct.com',
   workspaceSlug: 'product',
   projectId: '',
-  apiKey: 'plane_api_68b11fbeb14c431cad3a1f87455b622a',
+  apiKey: '',
 };
 
 const USER_AGENT_HEADER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -133,6 +133,60 @@ export async function fetchProjectDetails(cfg: PlaneConfig): Promise<PlaneProjec
     console.warn('Failed to fetch project details:', err);
     return null;
   }
+}
+
+export async function fetchWorkspaceProjects(cfg: Pick<PlaneConfig, 'baseUrl' | 'workspaceSlug' | 'apiKey'>): Promise<PlaneProject[]> {
+  const url = `${cfg.baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${cfg.workspaceSlug}/projects/`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': cfg.apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch projects: HTTP ${response.status} (${response.statusText})`);
+  }
+
+  const data = await response.json();
+  const list: PlaneProject[] = Array.isArray(data) ? data : (data && Array.isArray(data.results) ? data.results : []);
+  return list
+    .filter((p) => p && typeof p.id === 'string')
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+// Matches herdr-launcher's plane.filterProjects: substring over name, identifier and id.
+export function filterPlaneProjects(projects: PlaneProject[], query: string): PlaneProject[] {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return projects;
+  return projects.filter((p) =>
+    [p.name, p.identifier, p.id].some((v) => String(v || '').toLowerCase().includes(q))
+  );
+}
+
+const normalizePathKey =(p: string) => (p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+const pathBasename = (p: string) => normalizePathKey(p).split('/').pop() || '';
+
+// Same lookup order as herdr-launcher's plane.resolveProjectId so both tools agree on the mapping:
+// exact path (worktree, parent repo, sibling worktrees) → ancestor directory → folder basename.
+export function resolvePlaneProjectId(projectPlaneIds: Record<string, string> | undefined, candidatePaths: string[]): string {
+  if (!projectPlaneIds || typeof projectPlaneIds !== 'object') return '';
+  const candidates = [...new Set(candidatePaths.filter(Boolean).map(normalizePathKey))];
+  if (candidates.length === 0) return '';
+  const entries = Object.entries(projectPlaneIds)
+    .filter(([key, id]) => key && key.trim() && typeof id === 'string' && id.trim())
+    .map(([key, id]) => [normalizePathKey(key.trim()), id.trim()] as const);
+
+  const exact = entries.find(([key]) => candidates.includes(key));
+  if (exact) return exact[1];
+
+  const ancestor = entries.find(([key]) => candidates.some((cand) => cand.startsWith(key + '/')));
+  if (ancestor) return ancestor[1];
+
+  const bases = new Set(candidates.map(pathBasename));
+  const byBase = entries.find(([key]) => bases.has(pathBasename(key)));
+  return byBase ? byBase[1] : '';
 }
 
 export function cleanHTML(html?: string): string {
@@ -222,10 +276,30 @@ export async function scrapeStreamableMediaURLs(mediaId: string, streamableUrl: 
   return { videoUrl: null, posterUrl: null };
 }
 
+export type IssueCategory = 'backlog' | 'todo' | 'in_progress' | 'on_testing' | 'done' | 'cancelled' | 'other';
+
+// "On Testing" is usually a custom state in Plane's "started" group, so match it by name before the group.
+export function isOnTestingState(stateName?: string) {
+  return /\btest(ing)?\b/i.test(stateName || '');
+}
+
+export function getIssueCategory(issue: PlaneIssue): IssueCategory {
+  const group = (issue.stateGroup || '').toLowerCase();
+  const name = (issue.stateName || '').toLowerCase();
+  if (group === 'backlog' || name === 'backlog') return 'backlog';
+  if (group === 'unstarted' || name === 'todo') return 'todo';
+  if (isOnTestingState(name)) return 'on_testing';
+  if (group === 'started' || name === 'in progress') return 'in_progress';
+  if (group === 'completed' || name === 'done') return 'done';
+  if (group === 'cancelled' || name === 'cancelled') return 'cancelled';
+  return 'other';
+}
+
 export function categorizeIssues(issues: PlaneIssue[], stateMap: Map<string, PlaneState>) {
   const backlog: PlaneIssue[] = [];
   const todo: PlaneIssue[] = [];
   const inProgress: PlaneIssue[] = [];
+  const onTesting: PlaneIssue[] = [];
   const done: PlaneIssue[] = [];
   const cancelled: PlaneIssue[] = [];
   const other: PlaneIssue[] = [];
@@ -240,25 +314,18 @@ export function categorizeIssues(issues: PlaneIssue[], stateMap: Map<string, Pla
       issue.stateGroup = issue.stateGroup || 'other';
     }
 
-    const group = (issue.stateGroup || '').toLowerCase();
-    const name = (issue.stateName || '').toLowerCase();
-
-    if (group === 'backlog' || name === 'backlog') {
-      backlog.push(issue);
-    } else if (group === 'unstarted' || name === 'todo') {
-      todo.push(issue);
-    } else if (group === 'started' || name === 'in progress') {
-      inProgress.push(issue);
-    } else if (group === 'completed' || name === 'done') {
-      done.push(issue);
-    } else if (group === 'cancelled' || name === 'cancelled') {
-      cancelled.push(issue);
-    } else {
-      other.push(issue);
+    switch (getIssueCategory(issue)) {
+      case 'backlog': backlog.push(issue); break;
+      case 'todo': todo.push(issue); break;
+      case 'in_progress': inProgress.push(issue); break;
+      case 'on_testing': onTesting.push(issue); break;
+      case 'done': done.push(issue); break;
+      case 'cancelled': cancelled.push(issue); break;
+      default: other.push(issue);
     }
   }
 
-  return { backlog, todo, inProgress, done, cancelled, other };
+  return { backlog, todo, inProgress, onTesting, done, cancelled, other };
 }
 
 export function generateTaskListMD(
@@ -268,7 +335,7 @@ export function generateTaskListMD(
   mediaMap?: Map<number, EvidenceMedia[]>,
   projectInfo?: PlaneProject | null
 ): string {
-  const { backlog, todo, inProgress, done, cancelled, other } = categorizeIssues(issues, stateMap);
+  const { backlog, todo, inProgress, onTesting, done, cancelled, other } = categorizeIssues(issues, stateMap);
   const totalCount = issues.length;
   const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
@@ -287,6 +354,7 @@ export function generateTaskListMD(
   md += `| 🔴 **Backlog** | ${backlog.length} | 🔴 |\n`;
   md += `| 🟡 **Todo** | ${todo.length} | 🟡 |\n`;
   md += `| 🔵 **In Progress** | ${inProgress.length} | 🔵 |\n`;
+  md += `| 🟣 **On Testing** | ${onTesting.length} | 🟣 |\n`;
   md += `| 🟢 **Done** | ${done.length} | 🟢 |\n`;
   md += `| ⚪ **Cancelled** | ${cancelled.length} | ⚪ |\n`;
   if (other.length > 0) {
@@ -340,21 +408,27 @@ export function generateTaskListMD(
     for (const item of inProgress) md += formatItem('/', item);
   }
 
-  // 4. Done
+  // 4. On Testing
+  if (onTesting.length > 0) {
+    md += `--- \n\n## 🟣 4. On Testing Tasks (${onTesting.length})\n\n`;
+    for (const item of onTesting) md += formatItem('/', item);
+  }
+
+  // 5. Done
   if (done.length > 0) {
-    md += `--- \n\n## 🟢 4. Done Tasks (${done.length})\n\n`;
+    md += `--- \n\n## 🟢 5. Done Tasks (${done.length})\n\n`;
     for (const item of done) md += formatItem('x', item);
   }
 
-  // 5. Cancelled
+  // 6. Cancelled
   if (cancelled.length > 0) {
-    md += `--- \n\n## ⚪ 5. Cancelled Tasks (${cancelled.length})\n\n`;
+    md += `--- \n\n## ⚪ 6. Cancelled Tasks (${cancelled.length})\n\n`;
     for (const item of cancelled) md += formatItem(' ', item);
   }
 
-  // 6. Other / Draft
+  // 7. Other / Draft
   if (other.length > 0) {
-    md += `--- \n\n## ❓ 6. Other / Draft Tasks (${other.length})\n\n`;
+    md += `--- \n\n## ❓ 7. Other / Draft Tasks (${other.length})\n\n`;
     for (const item of other) md += formatItem(' ', item);
   }
 

@@ -6,7 +6,7 @@ function createModalPrimitives(dom) {
   function hideModal() {
     dom.modalOverlay.style.display = 'none';
     if (dom.modal) {
-      dom.modal.classList.remove('export-modal', 'symlink-modal');
+      dom.modal.classList.remove('export-modal', 'export-options-modal', 'symlink-modal');
     }
   }
 

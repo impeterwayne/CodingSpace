@@ -1,5 +1,7 @@
 # Coding Space
 
+[English](README.md) | [Tiếng Việt](README.vi.md)
+
 Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, integrate AI agent toolkits (OpenSpec), and operate using embedded or external terminal interfaces.
 
 ![Coding Space Interface](assets/screenshot.png)
@@ -10,7 +12,7 @@ Coding Space is a developer workspace manager built on Electron and TypeScript. 
 - **Symlink Management**: Share large directories like `node_modules` or assets between worktrees to save disk space.
 - **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
 - **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in an external terminal (Windows Terminal on Windows, Terminal.app on macOS, the system terminal emulator on Linux). The new-tab menu includes danger-marked Codex (YOLO), Claude, and Antigravity CLI launchers for explicitly unsandboxed / permission-bypassed sessions.
-- **Prefix Shortcuts (herdr-style)**: Press `Ctrl+B`, then a key within 2s — `c` / `Alt+T` terminal, `Alt+C` Claude, `Alt+Shift+C` Codex (YOLO), `Alt+A` Antigravity, `Alt+O` OpenCode. `Ctrl+B` twice sends a literal `Ctrl+B` to the terminal.
+- **Prefix Shortcuts**: Press `Ctrl+B`, then a key within 2s — `c` / `Alt+T` terminal, `Alt+C` Claude, `Alt+Shift+C` Codex (YOLO), `Alt+A` Antigravity, `Alt+O` OpenCode. `Ctrl+B` twice sends a literal `Ctrl+B` to the terminal.
 - **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, Claude Desktop, and the OS file manager (Explorer / Finder / Files).
 
 ## Getting Started
@@ -57,7 +59,7 @@ macOS builds are not code-signed or notarized. After downloading, either right-c
 
 ## Codebase Architecture
 
-- **Main Process**: [src/main/main.ts](file:///D:/Quest/CodingSpace/src/main/main.ts) & [src/main/ipc/workspaceIpc.ts](file:///D:/Quest/CodingSpace/src/main/ipc/workspaceIpc.ts)
-- **Preload Bridge**: [src/main/preload.ts](file:///D:/Quest/CodingSpace/src/main/preload.ts)
-- **Renderer Frontend**: [src/renderer/index.html](file:///D:/Quest/CodingSpace/src/renderer/index.html), [src/renderer/app.ts](file:///D:/Quest/CodingSpace/src/renderer/app.ts), & [src/renderer/styles.css](file:///D:/Quest/CodingSpace/src/renderer/styles.css)
-- **Services**: [src/application/workspaceService.ts](file:///D:/Quest/CodingSpace/src/application/workspaceService.ts) & [src/application/workspaceConfigStore.ts](file:///D:/Quest/CodingSpace/src/application/workspaceConfigStore.ts)
+- **Main Process**: [src/main/main.ts](src/main/main.ts) & [src/main/ipc/workspaceIpc.ts](src/main/ipc/workspaceIpc.ts)
+- **Preload Bridge**: [src/main/preload.ts](src/main/preload.ts)
+- **Renderer Frontend**: [src/renderer/index.html](src/renderer/index.html), [src/renderer/app.ts](src/renderer/app.ts), & [src/renderer/styles.css](src/renderer/styles.css)
+- **Services**: [src/application/workspaceService.ts](src/application/workspaceService.ts) & [src/application/workspaceConfigStore.ts](src/application/workspaceConfigStore.ts)

@@ -118,6 +118,7 @@ const state: {
     androidStudioPath?: string;
     antigravityPath?: string;
     antigravityAgentPath?: string;
+    claudeDesktopPath?: string;
     openspecSourcePath?: string;
     autoRefreshCurrentProject?: boolean;
     autoRefreshInterval?: number;
@@ -202,6 +203,7 @@ const dom = {
   btnAndroidStudio: $('#btn-android-studio'),
   btnAntigravity: $('#btn-antigravity'),
   btnAntigravityAgent: $('#btn-antigravity-agent'),
+  btnClaudeDesktop: $('#btn-claude-desktop'),
   btnManageSymlinks: $('#btn-manage-symlinks'),
   btnToggleWorkspaceSidebar: $('#btn-toggle-workspace-sidebar'),
   sidebarResizeHandle: $('#sidebar-resize-handle'),
@@ -210,10 +212,12 @@ const dom = {
   tabResizeHandle: $('#tab-resize-handle'),
   settingsAntigravityPath: $('#settings-antigravity-path'),
   settingsAntigravityAgentPath: $('#settings-antigravity-agent-path'),
+  settingsClaudeDesktopPath: $('#settings-claude-desktop-path'),
   settingsAndroidStudioPath: $('#settings-android-studio-path'),
   settingsVsCodePath: $('#settings-vscode-path'),
   btnBrowseAntigravity: $('#btn-browse-antigravity'),
   btnBrowseAntigravityAgent: $('#btn-browse-antigravity-agent'),
+  btnBrowseClaudeDesktop: $('#btn-browse-claude-desktop'),
   btnBrowseAndroidStudio: $('#btn-browse-android-studio'),
   btnBrowseVsCode: $('#btn-browse-vscode'),
   symlinkScreen: $('#symlink-screen'),
@@ -274,17 +278,20 @@ function applyPlatformLabels() {
     ? {
       antigravity: 'e.g. /Applications/Antigravity IDE.app',
       antigravityAgent: 'e.g. /Applications/Antigravity.app',
+      claudeDesktop: 'e.g. claude or /Applications/Claude.app',
       androidStudio: 'e.g. studio or /Applications/Android Studio.app',
       vscode: 'e.g. code or /Applications/Visual Studio Code.app',
     }
     : {
       antigravity: 'e.g. antigravity-ide or full path to the launcher',
       antigravityAgent: 'e.g. antigravity or full path to the launcher',
+      claudeDesktop: 'e.g. claude-desktop or /usr/bin/claude-desktop',
       androidStudio: 'e.g. android-studio or /opt/android-studio/bin/studio.sh',
       vscode: 'e.g. code or /usr/bin/code',
     };
   dom.settingsAntigravityPath.placeholder = placeholders.antigravity;
   dom.settingsAntigravityAgentPath.placeholder = placeholders.antigravityAgent;
+  if (dom.settingsClaudeDesktopPath) dom.settingsClaudeDesktopPath.placeholder = placeholders.claudeDesktop;
   dom.settingsAndroidStudioPath.placeholder = placeholders.androidStudio;
   dom.settingsVsCodePath.placeholder = placeholders.vscode;
 }
@@ -325,12 +332,14 @@ function setupBrowseButton(btn, input) {
 
 setupBrowseButton(dom.btnBrowseAntigravity, dom.settingsAntigravityPath);
 setupBrowseButton(dom.btnBrowseAntigravityAgent, dom.settingsAntigravityAgentPath);
+setupBrowseButton(dom.btnBrowseClaudeDesktop, dom.settingsClaudeDesktopPath);
 setupBrowseButton(dom.btnBrowseAndroidStudio, dom.settingsAndroidStudioPath);
 setupBrowseButton(dom.btnBrowseVsCode, dom.settingsVsCodePath);
 
 const settingsInputs = [
   dom.settingsAntigravityPath,
   dom.settingsAntigravityAgentPath,
+  dom.settingsClaudeDesktopPath,
   dom.settingsAndroidStudioPath,
   dom.settingsVsCodePath,
   dom.settingsPlaneApiKey,
@@ -1770,6 +1779,63 @@ function hideTabDropdown() {
   document.removeEventListener('click', handleDropdownOutsideClick);
 }
 
+// herdr-style prefix keys: press Ctrl+B, release, then a binding key. Bindings mirror
+// herdr-launcher's config.example.toml so muscle memory carries over between the two.
+const PREFIX_TIMEOUT_MS = 2000;
+const PREFIX_BINDINGS: Array<{ code: string; alt?: boolean; shift?: boolean; run: () => void }> = [
+  { code: 'KeyC', alt: true, run: () => createToolTab('claudeDangerous') },
+  { code: 'KeyC', alt: true, shift: true, run: () => createToolTab('codexYolo') },
+  { code: 'KeyA', alt: true, run: () => createToolTab('agy') },
+  { code: 'KeyO', alt: true, run: () => createToolTab('opencode') },
+  { code: 'KeyT', alt: true, run: () => createNewTerminalTab() },
+  { code: 'KeyC', run: () => createNewTerminalTab() },
+];
+
+let prefixArmedTimer: number | null = null;
+
+function isPrefixKey(e: KeyboardEvent) {
+  return e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.code === 'KeyB';
+}
+
+function setPrefixArmed(armed: boolean) {
+  if (prefixArmedTimer !== null) {
+    window.clearTimeout(prefixArmedTimer);
+    prefixArmedTimer = null;
+  }
+  document.body.classList.toggle('prefix-armed', armed);
+  if (armed) prefixArmedTimer = window.setTimeout(() => setPrefixArmed(false), PREFIX_TIMEOUT_MS);
+}
+
+// Capture phase so the prefix is consumed before xterm turns it into PTY input.
+window.addEventListener('keydown', (e) => {
+  const armed = prefixArmedTimer !== null;
+  if (!armed) {
+    if (isPrefixKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      setPrefixArmed(true);
+    }
+    return;
+  }
+
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setPrefixArmed(false);
+
+  // Prefix twice sends a literal Ctrl+B to the active terminal, like tmux/herdr.
+  if (isPrefixKey(e)) {
+    if (state.activeTerminalId) window.api.ptyWrite(state.activeTerminalId, '\x02');
+    return;
+  }
+
+  const binding = PREFIX_BINDINGS.find((b) => b.code === e.code
+    && Boolean(b.alt) === e.altKey
+    && Boolean(b.shift) === e.shiftKey
+    && !e.ctrlKey && !e.metaKey);
+  binding?.run();
+}, true);
+
 function handleDropdownOutsideClick(e) {
   const dropdown = document.getElementById('tab-dropdown');
   if (dropdown && !dropdown.contains(e.target) && !dom.tabNewBtn.contains(e.target)) {
@@ -1923,6 +1989,7 @@ bindWorktreeQuickAction(dom.btnExplorer, (wtPath) => window.api.openInExplorer(w
 bindWorktreeQuickAction(dom.btnAndroidStudio, (wtPath) => window.api.openInAndroidStudio(wtPath), 'Opening Android Studio...');
 bindWorktreeQuickAction(dom.btnAntigravity, (wtPath) => window.api.openInAntigravity(wtPath), 'Opening Antigravity...');
 bindWorktreeQuickAction(dom.btnAntigravityAgent, (wtPath) => window.api.openInAntigravityAgent(wtPath), 'Opening Agent Manager...');
+bindWorktreeQuickAction(dom.btnClaudeDesktop, (wtPath) => window.api.openInClaudeDesktop(wtPath), 'Opening Claude Desktop (Code mode)...');
 
 if (dom.btnManageSymlinks) {
   dom.btnManageSymlinks.addEventListener('click', () => {
@@ -2190,6 +2257,13 @@ function attachSelectedProjectEvents(project) {
       showToast('Opening Antigravity...', 'info');
     });
 
+    wtEl.querySelector('[data-action="claude-desktop"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const currentTarget = e.currentTarget;
+      if (currentTarget instanceof HTMLElement) window.api.openInClaudeDesktop(currentTarget.dataset.path || '');
+      showToast('Opening Claude Desktop (Code mode)...', 'info');
+    });
+
     wtEl.querySelector('[data-action="explorer"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const currentTarget = e.currentTarget;
@@ -2384,6 +2458,7 @@ async function saveSettingsFromUI() {
     antigravityAgentPath: dom.settingsAntigravityAgentPath ? cleanVal(dom.settingsAntigravityAgentPath.value) : '',
     androidStudioPath: dom.settingsAndroidStudioPath ? cleanVal(dom.settingsAndroidStudioPath.value) : '',
     vscodePath: dom.settingsVsCodePath ? cleanVal(dom.settingsVsCodePath.value) : '',
+    claudeDesktopPath: dom.settingsClaudeDesktopPath ? cleanVal(dom.settingsClaudeDesktopPath.value) : '',
     autoRefreshCurrentProject: dom.settingsAutoRefresh ? dom.settingsAutoRefresh.checked : true,
     autoRefreshInterval: isNaN(intervalVal) || intervalVal < 1 ? 10 : intervalVal,
     planeApiKey: dom.settingsPlaneApiKey ? dom.settingsPlaneApiKey.value.trim() : state.settings?.planeApiKey || '',
@@ -2395,6 +2470,7 @@ async function showSettingsScreen() {
   if (state.settings) {
     if (dom.settingsAntigravityPath) dom.settingsAntigravityPath.value = state.settings.antigravityPath || 'detecting...';
     if (dom.settingsAntigravityAgentPath) dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || 'detecting...';
+    if (dom.settingsClaudeDesktopPath) dom.settingsClaudeDesktopPath.value = state.settings.claudeDesktopPath || 'detecting...';
     if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'detecting...';
     if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || 'detecting...';
     if (dom.settingsAutoRefresh) dom.settingsAutoRefresh.checked = !!state.settings.autoRefreshCurrentProject;
@@ -2416,6 +2492,9 @@ async function showSettingsScreen() {
       if (dom.settingsAntigravityAgentPath) {
         dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || detected.antigravityAgentPath || 'not detected';
       }
+      if (dom.settingsClaudeDesktopPath) {
+        dom.settingsClaudeDesktopPath.value = state.settings.claudeDesktopPath || detected.claudeDesktopPath || 'not detected';
+      }
       if (dom.settingsAndroidStudioPath) {
         dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || detected.androidStudioPath || 'not detected';
       }
@@ -2431,6 +2510,9 @@ async function showSettingsScreen() {
       }
       if (dom.settingsAntigravityAgentPath) {
         dom.settingsAntigravityAgentPath.value = state.settings.antigravityAgentPath || 'not detected';
+      }
+      if (dom.settingsClaudeDesktopPath) {
+        dom.settingsClaudeDesktopPath.value = state.settings.claudeDesktopPath || 'not detected';
       }
       if (dom.settingsAndroidStudioPath) {
         dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'not detected';

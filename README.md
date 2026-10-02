@@ -10,7 +10,8 @@ Coding Space is a developer workspace manager built on Electron and TypeScript. 
 - **Symlink Management**: Share large directories like `node_modules` or assets between worktrees to save disk space.
 - **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
 - **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in an external terminal (Windows Terminal on Windows, Terminal.app on macOS, the system terminal emulator on Linux). The new-tab menu includes danger-marked Codex (YOLO), Claude, and Antigravity CLI launchers for explicitly unsandboxed / permission-bypassed sessions.
-- **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, and the OS file manager (Explorer / Finder / Files).
+- **Prefix Shortcuts (herdr-style)**: Press `Ctrl+B`, then a key within 2s — `c` / `Alt+T` terminal, `Alt+C` Claude, `Alt+Shift+C` Codex (YOLO), `Alt+A` Antigravity, `Alt+O` OpenCode. `Ctrl+B` twice sends a literal `Ctrl+B` to the terminal.
+- **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, Claude Desktop, and the OS file manager (Explorer / Finder / Files).
 
 ## Getting Started
 

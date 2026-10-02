@@ -24,6 +24,7 @@ test('normalizeSettings trims values and drops blank entries', () => {
       androidStudioPath: '  studio64  ',
       antigravityPath: '  antigravity-ide  ',
       antigravityAgentPath: '  antigravity  ',
+      claudeDesktopPath: '  claude-desktop  ',
     }),
     {
       subworktreeBranchParents: {
@@ -33,6 +34,7 @@ test('normalizeSettings trims values and drops blank entries', () => {
       androidStudioPath: 'studio64',
       antigravityPath: 'antigravity-ide',
       antigravityAgentPath: 'antigravity',
+      claudeDesktopPath: 'claude-desktop',
       openspecSourcePath: '',
       autoRefreshCurrentProject: true,
       autoRefreshInterval: 10,
@@ -51,6 +53,7 @@ test('normalizeSettings falls back for non-object input', () => {
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    claudeDesktopPath: '',
     openspecSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,
@@ -105,6 +108,7 @@ test('normalizeWorkspaceConfig keeps projects array and normalizes settings', ()
     androidStudioPath: '',
     antigravityPath: '',
     antigravityAgentPath: '',
+    claudeDesktopPath: '',
     openspecSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,

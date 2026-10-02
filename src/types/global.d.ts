@@ -39,6 +39,7 @@ declare global {
       openInAndroidStudio: (path: string) => Promise<any>;
       openInAntigravity: (path: string) => Promise<any>;
       openInAntigravityAgent: (path: string) => Promise<any>;
+      openInClaudeDesktop: (path: string) => Promise<any>;
       ptyCreate: (opts: any) => Promise<any>;
       ptyCreateTool: (opts: any) => Promise<any>;
       resolveToolLaunch: (opts: { command: string; args?: string[] }) => Promise<any>;
@@ -53,6 +54,7 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        claudeDesktopPath?: string;
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
@@ -68,6 +70,7 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        claudeDesktopPath?: string;
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
@@ -82,6 +85,7 @@ declare global {
         androidStudioPath?: string;
         antigravityPath?: string;
         antigravityAgentPath?: string;
+        claudeDesktopPath?: string;
         openspecSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
@@ -95,6 +99,7 @@ declare global {
       detectIntegrationPaths: () => Promise<{
         antigravityPath: string | null;
         antigravityAgentPath: string | null;
+        claudeDesktopPath: string | null;
         androidStudioPath: string | null;
         vscodePath: string | null;
       }>;

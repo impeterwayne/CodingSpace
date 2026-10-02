@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('api', {
   openInAndroidStudio: (path) => ipcRenderer.invoke('open-in-android-studio', path),
   openInAntigravity: (path) => ipcRenderer.invoke('open-in-antigravity', path),
   openInAntigravityAgent: (path) => ipcRenderer.invoke('open-in-antigravity-agent', path),
+  openInClaudeDesktop: (path) => ipcRenderer.invoke('open-in-claude-desktop', path),
 
   // ── Embedded terminal (PTY) ──
   ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),

@@ -195,6 +195,15 @@
                   <button type="button" class="btn-browse" id="btn-browse-vscode" title="Browse executable">Browse</button>
                 </div>
               </div>
+
+              <!-- Claude Desktop -->
+              <div class="form-group-col">
+                <label class="form-label">Claude Desktop path or command</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-claude-desktop-path" class="settings-input" placeholder="e.g. claude-desktop or path to Claude.exe" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-claude-desktop" title="Browse executable">Browse</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -489,6 +498,10 @@
             <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-antigravity-agent" title="Open in Antigravity Agent Manager" aria-label="Open in Antigravity Agent Manager">
               <span class="workspace-tool-icon"><img src="icons/antigravity.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Agent Manager</span>
+            </button>
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-claude-desktop" title="Open in Claude Desktop (Code mode)" aria-label="Open in Claude Desktop (Code mode)">
+              <span class="workspace-tool-icon"><img src="icons/claude.svg" width="16" height="16" alt="" /></span>
+              <span class="workspace-tool-text">Claude Desktop</span>
             </button>
             <div class="workspace-tool-separator"></div>
             <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-android-studio" title="Open in Android Studio" aria-label="Open in Android Studio">

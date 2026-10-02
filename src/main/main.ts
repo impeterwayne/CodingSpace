@@ -868,6 +868,26 @@ app.whenReady().then(() => {
         darwin: { commands: ['antigravity'], paths: macApp('Antigravity.app') },
         linux: { commands: ['antigravity'], paths: [] },
       },
+      claudeDesktop: {
+        win32: { commands: ['claude-desktop', 'claude'], paths: [
+          path.join(home, 'AppData', 'Local', 'Microsoft', 'WindowsApps', 'claude-desktop.exe'),
+          path.join(localPrograms, 'Claude', 'Claude.exe'),
+          path.join(localPrograms, 'claude', 'Claude.exe'),
+          path.join(home, 'AppData', 'Local', 'AnthropicClaude', 'Claude.exe'),
+          path.join(home, 'AppData', 'Local', 'AnthropicClaude', 'claude.exe'),
+          path.join(home, 'AppData', 'Local', 'Claude', 'Claude.exe'),
+          path.join(programFiles, 'Claude', 'Claude.exe'),
+        ] },
+        darwin: { commands: ['claude'], paths: macApp('Claude.app') },
+        linux: { commands: ['claude-desktop', 'claude'], paths: [
+          '/usr/bin/claude-desktop',
+          '/usr/local/bin/claude-desktop',
+          '/opt/Claude/claude',
+          path.join(home, '.local', 'bin', 'claude-desktop'),
+          '/var/lib/flatpak/exports/bin/com.anthropic.claude',
+          '/snap/bin/claude-desktop',
+        ] },
+      },
       androidStudio: {
         win32: { commands: ['studio64'], paths: [
           path.join(programFiles, 'Android', 'Android Studio', 'bin', 'studio64.exe'),
@@ -906,7 +926,13 @@ app.whenReady().then(() => {
 
   function detectIntegrationPath(key) {
     const { commands, paths } = getIntegrationLocations(key);
-    return paths.find((p) => fs.existsSync(p))
+    return paths.find((p) => {
+      try {
+        return fs.existsSync(p) || fs.lstatSync(p).isSymbolicLink() || fs.lstatSync(p).isFile();
+      } catch (_) {
+        return false;
+      }
+    })
       || commands.map((command) => findOnPath(command)).find(Boolean)
       || null;
   }
@@ -919,6 +945,7 @@ app.whenReady().then(() => {
     return {
       antigravityPath: detectIntegrationPath('antigravity'),
       antigravityAgentPath: detectIntegrationPath('antigravityAgent'),
+      claudeDesktopPath: detectIntegrationPath('claudeDesktop'),
       androidStudioPath: detectIntegrationPath('androidStudio'),
       vscodePath: detectIntegrationPath('vscode'),
     };
@@ -927,7 +954,8 @@ app.whenReady().then(() => {
   function openDirectoryWith(settingKey, integrationKey, dirPath) {
     try {
       const exe = workspaceService.getSettings()[settingKey] || findIntegrationExecutable(integrationKey);
-      launchDetached(exe, [dirPath], { cwd: dirPath });
+      const args = dirPath ? [dirPath] : [];
+      launchDetached(exe, args, { cwd: dirPath || undefined });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -946,6 +974,29 @@ app.whenReady().then(() => {
       // Launch Antigravity Agent Manager independently of any worktree
       const cwd = path.isAbsolute(exe) ? path.dirname(exe) : undefined;
       launchDetached(exe, [], { cwd });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('open-in-claude-desktop', async (_, dirPath) => {
+    try {
+      const customExe = workspaceService.getSettings().claudeDesktopPath;
+      const folderUri = dirPath ? `claude://code/new?folder=${encodeURIComponent(dirPath)}` : 'claude://code/new';
+
+      if (!customExe) {
+        try {
+          await shell.openExternal(folderUri);
+          return { success: true };
+        } catch (_) {
+          // Fall through to executable launch
+        }
+      }
+
+      const exe = customExe || findIntegrationExecutable('claudeDesktop');
+      const args = folderUri ? [folderUri] : (dirPath ? [dirPath] : []);
+      launchDetached(exe, args, { cwd: dirPath || undefined });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

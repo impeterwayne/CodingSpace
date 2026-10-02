@@ -33,11 +33,19 @@ function isExecutableFile(candidate) {
   }
 }
 
+function isPathExisting(candidate) {
+  try {
+    return fs.existsSync(candidate) || fs.lstatSync(candidate).isSymbolicLink() || fs.lstatSync(candidate).isFile();
+  } catch (_) {
+    return false;
+  }
+}
+
 // Resolves a bare command name against PATH without going through a shell.
 // On Windows, .cmd/.bat shims are preferred over .exe to match `where.exe` usage elsewhere.
 function findOnPath(command) {
   if (!command) return null;
-  if (path.isAbsolute(command)) return fs.existsSync(command) ? command : null;
+  if (path.isAbsolute(command)) return isPathExisting(command) ? command : null;
 
   if (isWindows) {
     try {

@@ -4,48 +4,7 @@ const DEFAULT_MCP_SERVERS = {
     "args": [
       "-y",
       "@impeterwayne/figma-mcp-android@latest"
-    ],
-    "disabled": true
-  },
-  "gradle": {
-    "command": "jbang",
-    "args": [
-      "run",
-      "--quiet",
-      "--fresh",
-      "gradle-mcp@rnett"
-    ],
-    "env": {
-      "JAVA_HOME": "C:\\Users\\Admin\\.jbang\\cache\\jdks\\21"
-    },
-    "disabled": true
-  },
-  "ghidra-mcp": {
-    "command": "python",
-    "args": [
-      "D:\\Tools\\Ghidra\\ghidra_12.1_PUBLIC\\bridge_mcp_ghidra.py"
-    ],
-    "disabled": true
-  },
-  "http-toolkit": {
-    "command": "C:\\Users\\Admin\\AppData\\Local\\Programs\\HTTP Toolkit\\resources\\httptoolkit-mcp.cmd",
-    "disabled": true
-  },
-  "pencil": {
-    "command": "D:\\Tools\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
-    "args": [
-      "--app",
-      "desktop"
-    ],
-    "env": {},
-    "disabled": true
-  },
-  "scrcpy": {
-    "command": "npx",
-    "args": [
-      "scrcpy-mcp"
-    ],
-    "disabled": true
+    ]
   }
 };
 

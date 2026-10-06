@@ -2,7 +2,7 @@
 
 [English](README.md) | [Tiếng Việt](README.vi.md)
 
-Coding Space là trình quản lý không gian làm việc (workspace manager) dành cho lập trình viên, được xây dựng trên nền tảng Electron và TypeScript. Ứng dụng tối ưu hóa quy trình làm việc thông qua Git worktree, cho phép bạn quản lý song song nhiều nhánh (branch) cùng lúc, chia sẻ thư mục thông qua symlink, tích hợp các bộ công cụ AI agent (OpenSpec), và làm việc linh hoạt với giao diện terminal tích hợp hoặc mở ngoài.
+Coding Space là trình quản lý không gian làm việc (workspace manager) dành cho lập trình viên, được xây dựng trên nền tảng Electron và TypeScript. Ứng dụng tối ưu hóa quy trình làm việc thông qua Git worktree, cho phép bạn quản lý song song nhiều nhánh (branch) cùng lúc, chia sẻ thư mục thông qua symlink, thiết lập bộ công cụ Android harness (Android Harness AGY / aha), và làm việc linh hoạt với giao diện terminal tích hợp hoặc mở ngoài.
 
 ![Giao diện Coding Space](assets/screenshot.png)
 
@@ -10,7 +10,7 @@ Coding Space là trình quản lý không gian làm việc (workspace manager) d
 
 - **Điều phối Git Worktree**: Tự động quét, quản lý vòng đời (tạo, xóa) và đồng bộ nhánh/merge trực tiếp ngay trên giao diện trực quan.
 - **Quản lý Symlink**: Chia sẻ các thư mục có dung lượng lớn như `node_modules` hoặc thư mục assets giữa các worktree để tiết kiệm dung lượng ổ đĩa.
-- **Bộ công cụ AI Agent**: Triển khai các AI skill, định nghĩa lệnh và mẫu prompt dùng chung (OpenSpec, Antigravity, Claude, Codex, OpenCode) với cấu hình tự động cho `.git/info/exclude`.
+- **Thiết lập Android Harness AGY (`aha`)**: Cấu hình và triển khai các guardrail cho Android AI agent, quy tắc kiến trúc (XML / Compose), subagent tự động, deterministic hook và skill kỹ thuật với cấu hình tự động cho `.git/info/exclude`.
 - **Tích hợp Terminal**: Hỗ trợ nhiều tab terminal tích hợp sử dụng xterm.js và node-pty với khả năng tùy chỉnh kích thước, kèm tùy chọn mở phiên làm việc trên terminal bên ngoài (Windows Terminal trên Windows, Terminal.app trên macOS, hoặc terminal emulator mặc định trên Linux). Menu tạo tab mới có đánh dấu cảnh báo cho các trình khởi chạy Codex (YOLO), Claude và Antigravity CLI đối với các phiên làm việc không chạy sandbox hoặc bỏ qua kiểm soát quyền.
 - **Phím tắt Prefix**: Nhấn `Ctrl+B`, sau đó bấm phím tiếp theo trong vòng 2 giây — `c` / `Alt+T` mở terminal, `Alt+C` mở Claude, `Alt+Shift+C` mở Codex (YOLO), `Alt+A` mở Antigravity, `Alt+O` mở OpenCode. Nhấn `Ctrl+B` hai lần liên tiếp để gửi ký tự `Ctrl+B` thực tế vào terminal.
 - **Khởi chạy nhanh (Quick Launcher)**: Khởi chạy 1-click cho VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, Claude Desktop và trình quản lý tệp tin của hệ điều hành (Explorer / Finder / Files).
@@ -25,6 +25,13 @@ Coding Space là trình quản lý không gian làm việc (workspace manager) d
 
 ### Cài đặt & Chạy ứng dụng
 ```bash
+# Clone repository kèm submodule
+git clone --recurse-submodules https://github.com/impeterwayne/CodingSpace.git
+cd CodingSpace
+
+# Nếu đã clone trước đó mà chưa có submodule, hãy khởi tạo:
+# git submodule update --init --recursive
+
 npm install
 npm start
 ```

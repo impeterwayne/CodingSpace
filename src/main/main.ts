@@ -15,6 +15,7 @@ const {
   quoteShellArg,
   findOnPath,
   syncPathFromLoginShell,
+  expandHomeDir,
   launchDetached,
   openExternalTerminal,
 } = require('./platform');
@@ -231,12 +232,19 @@ function openExternalUrl(url) {
 
 // ── Window ─────────────────────────────────────────────
 function createWindow() {
+  const iconPng = path.join(__dirname, '../../build/icon.png');
+  const iconIco = path.join(__dirname, '../../build/icon.ico');
+  const appIcon = isWindows
+    ? (fs.existsSync(iconIco) ? iconIco : (fs.existsSync(iconPng) ? iconPng : undefined))
+    : (fs.existsSync(iconPng) ? iconPng : undefined);
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 920,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#000000',
+    ...(appIcon ? { icon: appIcon } : {}),
     // macOS keeps its native traffic-light buttons inside the custom titlebar;
     // Windows/Linux go fully frameless and use the renderer's own window controls.
     ...(isMac
@@ -604,119 +612,561 @@ app.whenReady().then(() => {
     }
   }
 
-  ipcMain.handle('toolkit:get-default-sources', () => {
+  // ── Android Harness AGY (aha) Helpers & IPC Handlers ──
+
+  function getPythonExecutable() {
+    const candidates = isWindows
+      ? ['python', 'py', 'python3']
+      : ['python3', 'python'];
+    for (const cmd of candidates) {
+      const resolved = findOnPath(cmd);
+      if (resolved) return resolved;
+    }
+    return isWindows ? 'python' : 'python3';
+  }
+
+  function resolveAhaSource(customPath?: string) {
+    if (customPath && typeof customPath === 'string' && customPath.trim()) {
+      const trimmed = customPath.trim();
+      if (fs.existsSync(trimmed)) {
+        const hasAhaPy = fs.existsSync(path.join(trimmed, 'aha.py'));
+        return { ahaPath: trimmed, exists: true, hasAhaPy };
+      }
+    }
+
     const toolkitsDir = app.isPackaged
       ? path.join(process.resourcesPath, 'toolkits')
       : path.join(app.getAppPath(), 'toolkits');
+
+    const candidates = [
+      path.join(toolkitsDir, 'AndroidHarnessAGY'),
+      path.join(toolkitsDir, 'android-harness-agy'),
+      path.join(app.getAppPath(), 'toolkits', 'AndroidHarnessAGY'),
+      path.join(app.getAppPath(), '..', 'AndroidHarnessAGY'),
+      'D:\\Quest\\AndroidHarnessAGY',
+    ];
+
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) {
+        const hasAhaPy = fs.existsSync(path.join(cand, 'aha.py'));
+        if (hasAhaPy) {
+          return { ahaPath: cand, exists: true, hasAhaPy: true };
+        }
+      }
+    }
+
+    const defaultPath = path.join(toolkitsDir, 'AndroidHarnessAGY');
     return {
-      openspecPath: path.join(toolkitsDir, 'OpenSpec')
+      ahaPath: defaultPath,
+      exists: fs.existsSync(defaultPath),
+      hasAhaPy: fs.existsSync(path.join(defaultPath, 'aha.py')),
+    };
+  }
+
+  ipcMain.handle('toolkit:get-default-sources', () => {
+    const { ahaPath } = resolveAhaSource();
+    return {
+      openspecPath: '',
+      ahaPath,
     };
   });
 
+  ipcMain.handle('aha:get-default-source', () => {
+    return resolveAhaSource();
+  });
+
+  ipcMain.handle('aha:get-status', (_, { worktreePath, ahaPath: customAhaPath }) => {
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { error: 'Invalid or non-existent worktree path' };
+    }
+
+    const { ahaPath, exists: ahaExists, hasAhaPy } = resolveAhaSource(customAhaPath);
+    const pythonExec = getPythonExecutable();
+
+    const agyJsonPath = path.join(worktreePath, '.agents', '.aha.json');
+    const claudeJsonPath = path.join(worktreePath, '.claude', '.aha.json');
+
+    let antigravityManifest = null;
+    let claudeManifest = null;
+
+    if (fs.existsSync(agyJsonPath)) {
+      try {
+        antigravityManifest = JSON.parse(fs.readFileSync(agyJsonPath, 'utf-8'));
+      } catch (_) {}
+    }
+
+    if (fs.existsSync(claudeJsonPath)) {
+      try {
+        claudeManifest = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+      } catch (_) {}
+    }
+
+    let agyStatusOutput = '';
+    let claudeStatusOutput = '';
+
+    if (hasAhaPy) {
+      const ahaPy = path.join(ahaPath, 'aha.py');
+      if (antigravityManifest) {
+        try {
+          agyStatusOutput = execFileSync(
+            pythonExec,
+            [ahaPy, 'status', '--platform', 'antigravity', worktreePath],
+            { cwd: ahaPath, encoding: 'utf-8', env: process.env }
+          );
+        } catch (err: any) {
+          agyStatusOutput = (err.stdout || err.stderr || err.message || '').toString();
+        }
+      }
+
+      if (claudeManifest) {
+        try {
+          claudeStatusOutput = execFileSync(
+            pythonExec,
+            [ahaPy, 'status', '--platform', 'claude', worktreePath],
+            { cwd: ahaPath, encoding: 'utf-8', env: process.env }
+          );
+        } catch (err: any) {
+          claudeStatusOutput = (err.stdout || err.stderr || err.message || '').toString();
+        }
+      }
+    }
+
+    // Local untracked state overrides
+    const agyLocalModeFile = path.join(worktreePath, '.agents', 'state', 'verifier_mode');
+    const agyLocalDeviceFile = path.join(worktreePath, '.agents', 'state', 'device');
+    const claudeLocalModeFile = path.join(worktreePath, '.claude', 'state', 'verifier_mode');
+    const claudeLocalDeviceFile = path.join(worktreePath, '.claude', 'state', 'device');
+
+    const agyLocalMode = fs.existsSync(agyLocalModeFile) ? fs.readFileSync(agyLocalModeFile, 'utf-8').trim() : null;
+    const agyLocalDevice = fs.existsSync(agyLocalDeviceFile) ? fs.readFileSync(agyLocalDeviceFile, 'utf-8').trim() : null;
+    const claudeLocalMode = fs.existsSync(claudeLocalModeFile) ? fs.readFileSync(claudeLocalModeFile, 'utf-8').trim() : null;
+    const claudeLocalDevice = fs.existsSync(claudeLocalDeviceFile) ? fs.readFileSync(claudeLocalDeviceFile, 'utf-8').trim() : null;
+
+    let sourceCommit = '';
+    if (ahaExists) {
+      try {
+        sourceCommit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+          cwd: ahaPath,
+          encoding: 'utf-8',
+          env: process.env,
+          timeout: 5000,
+        }).trim();
+      } catch (_) {}
+    }
+
+    const agyCommit = antigravityManifest?.commit || '';
+    const claudeCommit = claudeManifest?.commit || '';
+    const hasUpdateAvailable = Boolean(
+      (sourceCommit && ((agyCommit && agyCommit !== sourceCommit) || (claudeCommit && claudeCommit !== sourceCommit))) ||
+      agyStatusOutput.includes('SOURCE MOVED') ||
+      claudeStatusOutput.includes('SOURCE MOVED')
+    );
+
+    let agyFigmaOn = false;
+    const agyMcpPath = path.join(worktreePath, '.agents', 'mcp_config.json');
+    if (fs.existsSync(agyMcpPath)) {
+      try {
+        const mcpJson = JSON.parse(fs.readFileSync(agyMcpPath, 'utf-8'));
+        agyFigmaOn = Boolean(mcpJson?.mcpServers?.['figma-mcp-android']);
+      } catch (_) {}
+    }
+
+    let claudeFigmaOn = false;
+    const claudeMcpPath = path.join(worktreePath, '.mcp.json');
+    if (fs.existsSync(claudeMcpPath)) {
+      try {
+        const mcpJson = JSON.parse(fs.readFileSync(claudeMcpPath, 'utf-8'));
+        claudeFigmaOn = Boolean(mcpJson?.mcpServers?.['figma-mcp-android']);
+      } catch (_) {}
+    }
+
+    const agyEffectiveMode = agyLocalMode || antigravityManifest?.verifier_mode || 'compact';
+    const claudeEffectiveMode = claudeLocalMode || claudeManifest?.verifier_mode || 'compact';
+
+    return {
+      ahaPath,
+      ahaExists,
+      hasAhaPy,
+      sourceCommit,
+      hasUpdateAvailable,
+      antigravity: {
+        installed: !!antigravityManifest,
+        manifest: antigravityManifest,
+        statusOutput: agyStatusOutput,
+        localVerifierMode: agyLocalMode,
+        localDevice: agyLocalDevice,
+        effectiveVerifierMode: agyEffectiveMode,
+        figmaMcpOn: agyFigmaOn,
+        mobilerunMcpOn: agyEffectiveMode === 'full',
+      },
+      claude: {
+        installed: !!claudeManifest,
+        manifest: claudeManifest,
+        statusOutput: claudeStatusOutput,
+        localVerifierMode: claudeLocalMode,
+        localDevice: claudeLocalDevice,
+        effectiveVerifierMode: claudeEffectiveMode,
+        figmaMcpOn: claudeFigmaOn,
+        mobilerunMcpOn: claudeEffectiveMode === 'full',
+      },
+    };
+  });
+
+  ipcMain.handle('aha:init', (_, opts) => {
+    const {
+      worktreePath,
+      ahaPath: customAhaPath,
+      platform = 'antigravity',
+      track = 'xml',
+      profile = 'full',
+      verifierMode = 'compact',
+      deviceSerial,
+      subagentModel,
+      noHooks,
+      noMcp,
+      mcp,
+      noAgentsMd,
+      noGitExclude,
+      force = true,
+    } = opts || {};
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { success: false, error: 'Target worktree directory does not exist' };
+    }
+
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'init'];
+
+    if (platform) args.push('--platform', platform);
+    if (track) args.push('--track', track);
+    if (profile) args.push('--profile', profile);
+    if (verifierMode) args.push('--verifier-mode', verifierMode);
+    if (deviceSerial) args.push('--device', String(deviceSerial).trim());
+    if (platform === 'claude' && subagentModel) args.push('--subagent-model', String(subagentModel).trim());
+    if (noHooks) args.push('--no-hooks');
+    if (noMcp) args.push('--no-mcp');
+    else if (mcp) args.push('--mcp', mcp);
+    if (noAgentsMd) args.push('--no-agents-md');
+    if (noGitExclude) args.push('--no-git-exclude');
+    if (force) args.push('--force');
+    args.push(worktreePath);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:update', (_, opts) => {
+    const {
+      worktreePath,
+      ahaPath: customAhaPath,
+      platform,
+      track,
+      profile,
+      verifierMode,
+      mcp,
+      noMcp,
+      prune,
+    } = opts || {};
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { success: false, error: 'Target worktree directory does not exist' };
+    }
+
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'update'];
+
+    if (platform) args.push('--platform', platform);
+    if (track) args.push('--track', track);
+    if (profile) args.push('--profile', profile);
+    if (verifierMode) args.push('--verifier-mode', verifierMode);
+    if (noMcp) args.push('--no-mcp');
+    else if (mcp) args.push('--mcp', mcp);
+    if (prune) args.push('--prune');
+    args.push(worktreePath);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:undo', (_, opts) => {
+    const {
+      worktreePath,
+      ahaPath: customAhaPath,
+      platform,
+      force = true,
+    } = opts || {};
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { success: false, error: 'Target worktree directory does not exist' };
+    }
+
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'undo'];
+
+    if (platform) args.push('--platform', platform);
+    if (force) args.push('--force');
+    args.push(worktreePath);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:verifier', (_, opts) => {
+    const {
+      worktreePath,
+      ahaPath: customAhaPath,
+      mode,
+      reset,
+      deviceSerial,
+      platform,
+    } = opts || {};
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { success: false, error: 'Target worktree directory does not exist' };
+    }
+
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'verifier'];
+
+    if (reset) args.push('--reset');
+    else if (mode) args.push(mode);
+
+    if (deviceSerial !== undefined) {
+      args.push('--device', String(deviceSerial).trim());
+    }
+    if (platform) args.push('--platform', platform);
+    args.push(worktreePath);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:mcp', (_, opts) => {
+    const {
+      worktreePath,
+      ahaPath: customAhaPath,
+      action,
+      names = [],
+      platform,
+    } = opts || {};
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return { success: false, error: 'Target worktree directory does not exist' };
+    }
+
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'mcp'];
+
+    if (action) {
+      args.push(action);
+      if (Array.isArray(names)) {
+        args.push(...names);
+      } else if (names) {
+        args.push(names);
+      }
+    }
+
+    args.push('--target', worktreePath);
+    if (platform) args.push('--platform', platform);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:devices:list', (_, opts) => {
+    const { worktreePath, ahaPath: customAhaPath } = opts || {};
+    const { ahaPath } = resolveAhaSource(customAhaPath);
+
+    const candidateScriptPaths = [
+      worktreePath ? path.join(worktreePath, '.agents', 'scripts', 'device_lease.py') : null,
+      path.join(ahaPath, 'assets', 'xml', '.agents', 'scripts', 'device_lease.py'),
+      path.join(ahaPath, 'assets', 'compose', '.agents', 'scripts', 'device_lease.py'),
+    ].filter(Boolean) as string[];
+
+    const scriptPath = candidateScriptPaths.find((p) => fs.existsSync(p));
+    if (!scriptPath) {
+      return { success: false, error: 'device_lease.py script not found' };
+    }
+
+    const pythonExec = getPythonExecutable();
+    try {
+      const output = execFileSync(pythonExec, [scriptPath, 'list', '--json'], {
+        cwd: worktreePath && fs.existsSync(worktreePath) ? worktreePath : ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+        timeout: 10000,
+      });
+      const data = JSON.parse(output);
+      return { success: true, data };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:devices:release', (_, opts) => {
+    const { worktreePath, ahaPath: customAhaPath } = opts || {};
+    const { ahaPath } = resolveAhaSource(customAhaPath);
+
+    const candidateScriptPaths = [
+      worktreePath ? path.join(worktreePath, '.agents', 'scripts', 'device_lease.py') : null,
+      path.join(ahaPath, 'assets', 'xml', '.agents', 'scripts', 'device_lease.py'),
+      path.join(ahaPath, 'assets', 'compose', '.agents', 'scripts', 'device_lease.py'),
+    ].filter(Boolean) as string[];
+
+    const scriptPath = candidateScriptPaths.find((p) => fs.existsSync(p));
+    if (!scriptPath) {
+      return { success: false, error: 'device_lease.py script not found' };
+    }
+
+    const pythonExec = getPythonExecutable();
+    try {
+      const output = execFileSync(pythonExec, [scriptPath, 'release', '--json'], {
+        cwd: worktreePath && fs.existsSync(worktreePath) ? worktreePath : ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+        timeout: 10000,
+      });
+      const data = JSON.parse(output);
+      return { success: true, data };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  ipcMain.handle('aha:list', (_, opts) => {
+    const { ahaPath: customAhaPath, track } = opts || {};
+    const { ahaPath, hasAhaPy } = resolveAhaSource(customAhaPath);
+    if (!hasAhaPy) {
+      return { success: false, error: `Android Harness AGY not found at: ${ahaPath}` };
+    }
+
+    const pythonExec = getPythonExecutable();
+    const ahaPy = path.join(ahaPath, 'aha.py');
+    const args = [ahaPy, 'list'];
+    if (track) args.push('--track', track);
+
+    try {
+      const output = execFileSync(pythonExec, args, {
+        cwd: ahaPath,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return { success: true, output };
+    } catch (err: any) {
+      const output = (err.stdout || err.stderr || err.message || '').toString();
+      return { success: false, error: output || err.message };
+    }
+  });
+
+  // Legacy toolkit handlers kept for safe backward compatibility
   ipcMain.handle('toolkit:check-status', (_, { worktreePath, name, sourcePath }) => {
     const targetPath = path.join(worktreePath, name);
     try {
       if (sourcePath && fs.existsSync(sourcePath)) {
         const stats = fs.statSync(sourcePath);
         if (stats.isDirectory()) {
-          if (!fs.existsSync(targetPath)) {
-            return { exists: false };
-          }
+          if (!fs.existsSync(targetPath)) return { exists: false };
           const items = fs.readdirSync(sourcePath);
-          if (items.length === 0) {
-            return { exists: fs.existsSync(targetPath) };
-          }
+          if (items.length === 0) return { exists: fs.existsSync(targetPath) };
           for (const item of items) {
-            const itemDest = path.join(targetPath, item);
-            if (!fs.existsSync(itemDest)) {
-              return { exists: false };
-            }
+            if (!fs.existsSync(path.join(targetPath, item))) return { exists: false };
           }
           return { exists: true };
         } else {
           return { exists: fs.existsSync(targetPath) };
         }
-      } else {
-        const exists = fs.existsSync(targetPath);
-        return { exists };
       }
-    } catch (e) {
+      return { exists: fs.existsSync(targetPath) };
+    } catch (_) {
       return { exists: false };
     }
   });
 
   ipcMain.handle('toolkit:deploy', (_, { worktreePath, name, sourcePath }) => {
-    const destPath = path.join(worktreePath, name);
-    try {
-      if (!fs.existsSync(sourcePath)) {
-        return { success: false, error: `Source path does not exist: ${sourcePath}` };
-      }
-      const stats = fs.statSync(sourcePath);
-      if (stats.isDirectory()) {
-        if (!fs.existsSync(destPath)) {
-          fs.mkdirSync(destPath, { recursive: true });
-        }
-        const items = fs.readdirSync(sourcePath);
-        for (const item of items) {
-          const itemSrc = path.join(sourcePath, item);
-          const itemDest = path.join(destPath, item);
-          if (fs.existsSync(itemDest)) {
-            safeRmSync(itemDest);
-          }
-          copyFolderSync(itemSrc, itemDest);
-        }
-      } else {
-        if (!fs.existsSync(path.dirname(destPath))) {
-          fs.mkdirSync(path.dirname(destPath), { recursive: true });
-        }
-        if (fs.existsSync(destPath)) {
-          safeRmSync(destPath);
-        }
-        fs.copyFileSync(sourcePath, destPath);
-      }
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+    return { success: true };
   });
 
   ipcMain.handle('toolkit:remove', (_, { worktreePath, name, sourcePath }) => {
-    const destPath = path.join(worktreePath, name);
-    try {
-      if (sourcePath && fs.existsSync(sourcePath)) {
-        const stats = fs.statSync(sourcePath);
-        if (stats.isDirectory()) {
-          if (fs.existsSync(destPath)) {
-            const items = fs.readdirSync(sourcePath);
-            for (const item of items) {
-              const itemDest = path.join(destPath, item);
-              if (fs.existsSync(itemDest)) {
-                safeRmSync(itemDest);
-              }
-            }
-            try {
-              if (fs.readdirSync(destPath).length === 0) {
-                safeRmSync(destPath);
-              }
-            } catch (e) {
-              // Ignore failure to remove empty directory
-            }
-          }
-        } else {
-          if (fs.existsSync(destPath)) {
-            safeRmSync(destPath);
-          }
-        }
-      } else {
-        if (fs.existsSync(destPath)) {
-          safeRmSync(destPath);
-        }
-      }
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+    return { success: true };
   });
+
 
 
   // ── PTY / Embedded Terminal ──────────────────────────
@@ -1033,14 +1483,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle('add-worktree', async (_, { projectPath, sourceWorktreePath, branchName, wtPath, createBranch }) => {
     try {
-      let cmd;
-      if (createBranch) {
-        // git worktree add -b <new-branch> <path>
-        cmd = `git worktree add -b "${branchName}" "${wtPath}"`;
-      } else {
-        cmd = `git worktree add "${wtPath}" ${branchName}`;
-      }
-      const output = execSync(cmd, {
+      // Args go straight to git (no shell), so `~` must be expanded here.
+      const targetPath = expandHomeDir(wtPath);
+      const args = createBranch
+        ? ['worktree', 'add', '-b', branchName, targetPath]
+        : ['worktree', 'add', targetPath, branchName];
+      const output = execFileSync('git', args, {
         cwd: sourceWorktreePath || projectPath,
         encoding: 'utf-8',
         timeout: 30000,
@@ -1074,7 +1522,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('create-branch', async (_, { projectPath, branchName }) => {
     try {
-      const output = execSync(`git branch "${branchName}"`, {
+      const output = execFileSync('git', ['branch', branchName], {
         cwd: projectPath,
         encoding: 'utf-8',
         timeout: 10000,
@@ -1115,12 +1563,12 @@ app.whenReady().then(() => {
 
       let output = '';
       try {
-        output += execSync(`git checkout "${targetBranch}"`, {
+        output += execFileSync('git', ['checkout', targetBranch], {
           cwd: projectPath,
           encoding: 'utf-8',
           timeout: 30000,
         });
-        output += execSync(`git merge "${sourceBranch}"`, {
+        output += execFileSync('git', ['merge', sourceBranch], {
           cwd: projectPath,
           encoding: 'utf-8',
           timeout: 30000,
@@ -1128,7 +1576,7 @@ app.whenReady().then(() => {
       } finally {
         if (currentBranch && currentBranch !== targetBranch) {
           try {
-            execSync(`git checkout "${currentBranch}"`, {
+            execFileSync('git', ['checkout', currentBranch], {
               cwd: projectPath,
               encoding: 'utf-8',
               timeout: 30000,

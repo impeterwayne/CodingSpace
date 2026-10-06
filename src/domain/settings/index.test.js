@@ -35,7 +35,7 @@ test('normalizeSettings trims values and drops blank entries', () => {
       antigravityPath: 'antigravity-ide',
       antigravityAgentPath: 'antigravity',
       claudeDesktopPath: 'claude-desktop',
-      openspecSourcePath: '',
+      ahaSourcePath: '',
       autoRefreshCurrentProject: true,
       autoRefreshInterval: 10,
       planeApiKey: '',
@@ -54,7 +54,7 @@ test('normalizeSettings falls back for non-object input', () => {
     antigravityPath: '',
     antigravityAgentPath: '',
     claudeDesktopPath: '',
-    openspecSourcePath: '',
+    ahaSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,
     planeApiKey: '',
@@ -109,7 +109,7 @@ test('normalizeWorkspaceConfig keeps projects array and normalizes settings', ()
     antigravityPath: '',
     antigravityAgentPath: '',
     claudeDesktopPath: '',
-    openspecSourcePath: '',
+    ahaSourcePath: '',
     autoRefreshCurrentProject: true,
     autoRefreshInterval: 10,
     planeApiKey: '',
@@ -117,4 +117,15 @@ test('normalizeWorkspaceConfig keeps projects array and normalizes settings', ()
     planeWorkspaceSlug: 'product',
     projectPlaneIds: {},
   });
+});
+
+test('normalizeSettings trims ahaSourcePath and falls back to openspecSourcePath if present', () => {
+  assert.strictEqual(
+    normalizeSettings({ ahaSourcePath: '  /path/to/aha  ' }).ahaSourcePath,
+    '/path/to/aha'
+  );
+  assert.strictEqual(
+    normalizeSettings({ openspecSourcePath: '  /fallback/path  ' }).ahaSourcePath,
+    '/fallback/path'
+  );
 });

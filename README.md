@@ -2,7 +2,7 @@
 
 [English](README.md) | [Tiếng Việt](README.vi.md)
 
-Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, integrate AI agent toolkits (OpenSpec), and operate using embedded or external terminal interfaces.
+Coding Space is a developer workspace manager built on Electron and TypeScript. It optimizes development workflows using Git worktrees, allowing you to manage branches concurrently, share directories via symlinks, configure Android engineering harnesses (Android Harness AGY / aha), and operate using embedded or external terminal interfaces.
 
 ![Coding Space Interface](assets/screenshot.png)
 
@@ -10,7 +10,7 @@ Coding Space is a developer workspace manager built on Electron and TypeScript. 
 
 - **Git Worktree Orchestration**: Automated scanning, lifecycle management, and branch/merge syncing directly from the UI.
 - **Symlink Management**: Share large directories like `node_modules` or assets between worktrees to save disk space.
-- **AI Agent Toolkit**: Deploy shared AI skills, command definitions, and prompt templates (OpenSpec, Antigravity, Claude, Codex, OpenCode) with automatic `.git/info/exclude` configuration.
+- **Android Harness AGY (`aha`) Setup**: Configure and inject production-ready Android agentic guardrails, architectural rules (XML / Compose), autonomous subagents, deterministic hooks, and skills with automatic `.git/info/exclude` configuration.
 - **Terminal Integration**: Integrated tabs via xterm.js and node-pty with resizing, plus a toggle to spawn sessions in an external terminal (Windows Terminal on Windows, Terminal.app on macOS, the system terminal emulator on Linux). The new-tab menu includes danger-marked Codex (YOLO), Claude, and Antigravity CLI launchers for explicitly unsandboxed / permission-bypassed sessions.
 - **Prefix Shortcuts**: Press `Ctrl+B`, then a key within 2s — `c` / `Alt+T` terminal, `Alt+C` Claude, `Alt+Shift+C` Codex (YOLO), `Alt+A` Antigravity, `Alt+O` OpenCode. `Ctrl+B` twice sends a literal `Ctrl+B` to the terminal.
 - **Quick Launcher**: One-click launcher for VS Code, Android Studio, Antigravity IDE, Antigravity Agent Manager, Claude Desktop, and the OS file manager (Explorer / Finder / Files).
@@ -25,6 +25,13 @@ Coding Space is a developer workspace manager built on Electron and TypeScript. 
 
 ### Installation & Run
 ```bash
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/impeterwayne/CodingSpace.git
+cd CodingSpace
+
+# If already cloned without submodules, initialize them:
+# git submodule update --init --recursive
+
 npm install
 npm start
 ```

@@ -80,6 +80,16 @@ contextBridge.exposeInMainWorld('api', {
   deployToolkit: (opts) => ipcRenderer.invoke('toolkit:deploy', opts),
   removeToolkit: (opts) => ipcRenderer.invoke('toolkit:remove', opts),
   getDefaultToolkitSources: () => ipcRenderer.invoke('toolkit:get-default-sources'),
+  ahaGetDefaultSource: () => ipcRenderer.invoke('aha:get-default-source'),
+  ahaGetStatus: (opts) => ipcRenderer.invoke('aha:get-status', opts),
+  ahaInit: (opts) => ipcRenderer.invoke('aha:init', opts),
+  ahaUpdate: (opts) => ipcRenderer.invoke('aha:update', opts),
+  ahaUndo: (opts) => ipcRenderer.invoke('aha:undo', opts),
+  ahaList: (opts) => ipcRenderer.invoke('aha:list', opts),
+  ahaVerifier: (opts) => ipcRenderer.invoke('aha:verifier', opts),
+  ahaMcp: (opts) => ipcRenderer.invoke('aha:mcp', opts),
+  ahaDevicesList: (opts) => ipcRenderer.invoke('aha:devices:list', opts),
+  ahaDevicesRelease: (opts) => ipcRenderer.invoke('aha:devices:release', opts),
 
   // ── Project File Operations ──
   writeProjectFile: (opts) => ipcRenderer.invoke('project:write-file', opts),

@@ -18,7 +18,7 @@ function normalizeSettings(settings) {
     antigravityPath: typeof nextSettings.antigravityPath === 'string' ? nextSettings.antigravityPath.trim() : '',
     antigravityAgentPath: typeof nextSettings.antigravityAgentPath === 'string' ? nextSettings.antigravityAgentPath.trim() : '',
     claudeDesktopPath: typeof nextSettings.claudeDesktopPath === 'string' ? nextSettings.claudeDesktopPath.trim() : '',
-    openspecSourcePath: typeof nextSettings.openspecSourcePath === 'string' ? nextSettings.openspecSourcePath.trim() : '',
+    ahaSourcePath: typeof nextSettings.ahaSourcePath === 'string' ? nextSettings.ahaSourcePath.trim() : (typeof nextSettings.openspecSourcePath === 'string' ? nextSettings.openspecSourcePath.trim() : ''),
     autoRefreshCurrentProject: typeof nextSettings.autoRefreshCurrentProject === 'boolean' ? nextSettings.autoRefreshCurrentProject : true,
     autoRefreshInterval: typeof nextSettings.autoRefreshInterval === 'number' && nextSettings.autoRefreshInterval >= 1 ? nextSettings.autoRefreshInterval : 10,
     planeApiKey: typeof nextSettings.planeApiKey === 'string' && nextSettings.planeApiKey.trim() ? nextSettings.planeApiKey.trim() : '',

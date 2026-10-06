@@ -55,7 +55,7 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         claudeDesktopPath?: string;
-        openspecSourcePath?: string;
+        ahaSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
         planeApiKey?: string;
@@ -71,7 +71,7 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         claudeDesktopPath?: string;
-        openspecSourcePath?: string;
+        ahaSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
         planeApiKey?: string;
@@ -86,7 +86,7 @@ declare global {
         antigravityPath?: string;
         antigravityAgentPath?: string;
         claudeDesktopPath?: string;
-        openspecSourcePath?: string;
+        ahaSourcePath?: string;
         autoRefreshCurrentProject?: boolean;
         autoRefreshInterval?: number;
         planeApiKey?: string;
@@ -122,7 +122,69 @@ declare global {
       checkToolkitStatus: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ exists: boolean }>;
       deployToolkit: (opts: { worktreePath: string; name: string; sourcePath: string }) => Promise<{ success: boolean; error?: string }>;
       removeToolkit: (opts: { worktreePath: string; name: string; sourcePath?: string }) => Promise<{ success: boolean; error?: string }>;
-      getDefaultToolkitSources: () => Promise<{ openspecPath: string }>;
+      getDefaultToolkitSources: () => Promise<{ openspecPath: string; ahaPath: string }>;
+      ahaGetDefaultSource: () => Promise<{ ahaPath: string; exists: boolean }>;
+      ahaGetStatus: (opts: { worktreePath: string; ahaPath?: string }) => Promise<any>;
+      ahaInit: (opts: {
+        worktreePath: string;
+        ahaPath?: string;
+        platform?: string;
+        track?: string;
+        profile?: string;
+        verifierMode?: string;
+        deviceSerial?: string;
+        subagentModel?: string;
+        noHooks?: boolean;
+        noMcp?: boolean;
+        mcp?: string;
+        noAgentsMd?: boolean;
+        noGitExclude?: boolean;
+        force?: boolean;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaUpdate: (opts: {
+        worktreePath: string;
+        ahaPath?: string;
+        platform?: string;
+        track?: string;
+        profile?: string;
+        verifierMode?: string;
+        mcp?: string;
+        noMcp?: boolean;
+        prune?: boolean;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaUndo: (opts: {
+        worktreePath: string;
+        ahaPath?: string;
+        platform?: string;
+        force?: boolean;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaList: (opts: {
+        ahaPath?: string;
+        track?: string;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaVerifier: (opts: {
+        worktreePath: string;
+        ahaPath?: string;
+        mode?: string;
+        reset?: boolean;
+        deviceSerial?: string;
+        platform?: string;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaMcp: (opts: {
+        worktreePath: string;
+        ahaPath?: string;
+        action?: 'on' | 'off';
+        names?: string[];
+        platform?: string;
+      }) => Promise<{ success: boolean; output?: string; error?: string }>;
+      ahaDevicesList: (opts: {
+        worktreePath?: string;
+        ahaPath?: string;
+      }) => Promise<{ success: boolean; data?: any; error?: string }>;
+      ahaDevicesRelease: (opts: {
+        worktreePath?: string;
+        ahaPath?: string;
+      }) => Promise<{ success: boolean; data?: any; error?: string }>;
     };
   }
 }

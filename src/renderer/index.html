@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="xterm.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Cascadia+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Cascadia+Mono:wght@400;600&display=swap" rel="stylesheet" />
 </head>
 <body>
 
@@ -204,6 +204,15 @@
                   <button type="button" class="btn-browse" id="btn-browse-claude-desktop" title="Browse executable">Browse</button>
                 </div>
               </div>
+
+              <!-- AHA Source Path -->
+              <div class="form-group-col">
+                <label class="form-label">AHA Source Path (Android Harness AGY)</label>
+                <div class="input-browse-group">
+                  <input type="text" id="settings-aha-source-path" class="settings-input" placeholder="Default: toolkits/AndroidHarnessAGY" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="btn-browse" id="btn-browse-aha-source" title="Browse folder">Browse</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -298,45 +307,252 @@
         </div>
       </div>
 
-      <!-- ═══ Center — Agent Toolkit Screen ═══ -->
+      <!-- ═══ Center — Android Harness AGY (AHA) Screen ═══ -->
       <div id="agent-toolkit-screen" class="hidden">
         <div class="settings-container">
           <header class="settings-header">
             <div class="settings-title-group">
-              <h2 class="settings-title">Agent Toolkit Setup</h2>
-              <p class="settings-subtitle">Manage and symlink OpenSpec and platform directories for your current project, and exclude them from local Git status.</p>
+              <h2 class="settings-title">Android Harness Setup (AHA)</h2>
+              <p class="settings-subtitle">Production-ready agentic engineering harness for Android development with Google Antigravity & Claude Code.</p>
             </div>
-            <button type="button" class="btn-close-settings" id="btn-close-agent-toolkit-screen" title="Close toolkit setup" aria-label="Close toolkit setup">
+            <button type="button" class="btn-close-settings" id="btn-close-agent-toolkit-screen" title="Close AHA Setup" aria-label="Close AHA Setup">
               <img src="icons/close.svg" width="16" height="16" alt="" />
             </button>
           </header>
 
-          <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+          <!-- Top Worktree & Status Banner -->
+          <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
             <div>
               <span style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; display: block;">Active Worktree</span>
               <span id="agent-toolkit-active-worktree-name" style="font-size: 14px; font-weight: 600; color: var(--accent-color);">No active project</span>
               <div id="agent-toolkit-active-worktree-path" style="font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 2px;">Please select a worktree first.</div>
             </div>
-            <div style="display: flex; gap: 10px;">
-              <button type="button" class="btn-secondary" id="btn-agent-toolkit-apply-all" style="padding: 8px 16px;">
-                <img src="icons/check.svg" width="14" height="14" alt="" />
-                Apply Selected Toolkits
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <span id="aha-overall-status-badge"></span>
+              <button type="button" class="btn-secondary" id="btn-aha-refresh-status" style="padding: 8px 14px;" title="Refresh Harness Status">
+                <img src="icons/refresh.svg" width="14" height="14" alt="" />
+                Refresh
               </button>
             </div>
           </div>
 
-          <!-- Core Components & Platforms -->
-          <div style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
-            <div class="settings-card" style="width: 100%; margin: 0;">
-              <div class="settings-card-header">
-                <div class="settings-card-icon">
-                  <img src="icons/agent-toolkit.svg" width="16" height="16" alt="" />
-                </div>
-                <h3 class="settings-card-title">Toolkit Components & Git Exclude</h3>
+          <!-- Live Status & Drift Card -->
+          <div id="aha-status-card" class="settings-card" style="width: 100%; margin: 0;">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">
+                <img src="icons/android.svg" width="16" height="16" alt="" />
               </div>
-              <div class="settings-card-body" style="gap: 16px; width: 100%; margin-top: 12px;">
-                <div id="agent-toolkit-list-container" style="width: 100%;">
-                  <!-- Dynamic checklist rendered in JS -->
+              <h3 class="settings-card-title">Harness Status & Verification</h3>
+            </div>
+            <div class="settings-card-body" id="aha-status-container" style="gap: 12px; width: 100%; margin-top: 8px;">
+              <!-- Populated dynamically via JS -->
+            </div>
+          </div>
+
+          <!-- Setup Configuration Card -->
+          <div class="settings-card aha-setup-card">
+            <div class="settings-card-header">
+              <div class="aha-card-header-inner">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div class="settings-card-icon">
+                    <img src="icons/settings.svg" width="16" height="16" alt="" />
+                  </div>
+                  <div>
+                    <h3 class="settings-card-title" style="margin: 0;">Setup Configuration</h3>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                      Configure host platform, UI architecture, profile scope, and verification gates for this worktree.
+                    </div>
+                  </div>
+                </div>
+                <div id="aha-config-quick-badge" class="aha-badge-summary">
+                  <span>Configuration Ready</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-card-body" style="gap: 22px; width: 100%; margin-top: 14px;">
+              <!-- Section 1: Host Platform & UI Track -->
+              <div class="aha-config-section">
+                <div class="aha-section-title">Host & Architecture</div>
+                <div class="aha-form-grid">
+                  <!-- Platform Selection -->
+                  <div class="form-group-col">
+                    <label class="form-label" for="aha-config-platform">Agent Host Platform</label>
+                    <select id="aha-config-platform" class="aha-select">
+                      <option value="antigravity" selected>Google Antigravity IDE & CLI</option>
+                      <option value="claude">Claude Code</option>
+                    </select>
+                    <span id="aha-platform-hint" class="form-hint">Targets Google Antigravity IDE & CLI with .agents/ rules and AGENTS.md orchestration.</span>
+                  </div>
+
+                  <!-- Track Selection -->
+                  <div class="form-group-col">
+                    <label class="form-label" for="aha-config-track">UI Architecture Track</label>
+                    <select id="aha-config-track" class="aha-select">
+                      <option value="xml" selected>Views & XML Layouts</option>
+                      <option value="compose">Jetpack Compose</option>
+                    </select>
+                    <span id="aha-track-hint" class="form-hint">Views, ViewBinding, ShapeView, GlideImageView, Epoxy, and rules/xml.md.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 2: Scope & Verification Mode -->
+              <div class="aha-config-section">
+                <div class="aha-section-title">Scope & Verification</div>
+                <div class="aha-form-grid">
+                  <!-- Profile Selection -->
+                  <div class="form-group-col">
+                    <label class="form-label" for="aha-config-profile">Profile Scope</label>
+                    <select id="aha-config-profile" class="aha-select">
+                      <option value="full" selected>Full Harness (Entire payload)</option>
+                      <option value="android">Core Android (No Figma pipeline)</option>
+                      <option value="figma">Figma Design-to-Code Sprint</option>
+                      <option value="minimal">Minimal / Lean Review</option>
+                    </select>
+                    <span id="aha-profile-hint" class="form-hint">Entire track payload: 30+ skills, 8 subagents, and 3 architectural rules.</span>
+                  </div>
+
+                  <!-- Verifier Mode Selection -->
+                  <div class="form-group-col">
+                    <label class="form-label" for="aha-config-verifier">Verification Gate Mode</label>
+                    <select id="aha-config-verifier" class="aha-select">
+                      <option value="compact" selected>Compact (Gradle assemble & unit tests)</option>
+                      <option value="minimal">Minimal (Lint & diff checks only)</option>
+                      <option value="full">Full (Assemble, tests & MobileRun app launch)</option>
+                    </select>
+                    <span id="aha-verifier-hint" class="form-hint">Runs Gradle assemble & unit tests on task completion. Standard safety gate without requiring a device.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 3: Runtime & Environment -->
+              <div class="aha-config-section">
+                <div class="aha-section-title">Runtime & Environment (Device Leasing & Routing)</div>
+                <div class="aha-form-grid">
+                  <!-- Attached Device Selection & Lease -->
+                  <div class="form-group-col" id="aha-device-serial-group">
+                    <label class="form-label" for="aha-device-select">Connected Android Devices (via ADB)</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                      <select id="aha-device-select" class="aha-select" style="flex: 1;">
+                        <option value="">Scan attached devices...</option>
+                      </select>
+                      <button type="button" class="btn-secondary" id="btn-aha-refresh-devices" title="Rescan ADB devices" style="padding: 7px 12px; white-space: nowrap; height: 38px;">
+                        <img src="icons/refresh.svg" width="14" height="14" alt="" />
+                        Scan
+                      </button>
+                    </div>
+                    <span class="form-hint">Machine-wide device leasing: each worktree holds at most one device during testing.</span>
+
+                    <div style="margin-top: 10px;">
+                      <label class="form-label" for="aha-config-device">Preferred Device Serial (Worktree Override)</label>
+                      <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="aha-config-device" class="settings-input aha-input" placeholder="e.g. emulator-5554 or select above" autocomplete="off" spellcheck="false" style="flex: 1;" />
+                        <button type="button" class="btn-secondary" id="btn-aha-set-device" title="Save preferred device for this worktree" style="padding: 7px 12px; white-space: nowrap; height: 38px;">
+                          Save Preferred
+                        </button>
+                      </div>
+                      <span class="form-hint">Stored per-worktree in <code>.agents/state/device</code>. Clear to allow any free device.</span>
+                    </div>
+
+                    <div id="aha-device-lease-status" style="margin-top: 10px; display: none;">
+                      <!-- Populated dynamically if this worktree holds a lease -->
+                    </div>
+                  </div>
+
+                  <!-- Claude Subagent Model (hidden when platform != claude) -->
+                  <div class="form-group-col" id="aha-subagent-model-group" style="display: none;">
+                    <label class="form-label" for="aha-config-subagent-model">Claude Subagent Model</label>
+                    <input type="text" id="aha-config-subagent-model" class="settings-input aha-input" placeholder="default: sonnet" value="sonnet" autocomplete="off" spellcheck="false" />
+                    <span class="form-hint">Routing LLM model for Claude Code subagent delegation (e.g. sonnet, opus).</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 4: Harness Features & Safety Options -->
+              <div class="aha-config-section">
+                <div class="aha-section-title">Harness Features & Safety Options</div>
+                <div class="aha-toggles-grid">
+                  <!-- Feature Card 1: Hooks -->
+                  <div class="aha-feature-card">
+                    <div class="aha-feature-info">
+                      <div class="aha-feature-title">Deterministic Safety Gates & Hooks</div>
+                      <div class="aha-feature-desc">Enforces PreToolUse safety gates, PreInvocation checks, and verification before task stop.</div>
+                    </div>
+                    <label class="switch-toggle" for="aha-opt-hooks" title="Toggle Safety Gates & Hooks">
+                      <input type="checkbox" id="aha-opt-hooks" checked />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+
+                  <!-- Feature Card 2A: Figma MCP -->
+                  <div class="aha-feature-card">
+                    <div class="aha-feature-info">
+                      <div class="aha-feature-title">Figma MCP Server</div>
+                      <div class="aha-feature-desc">Extracts layouts, tokens, and vector drawables from Figma designs into code.</div>
+                    </div>
+                    <label class="switch-toggle" for="aha-opt-mcp-figma" title="Toggle Figma MCP Server">
+                      <input type="checkbox" id="aha-opt-mcp-figma" checked />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+
+                  <!-- Feature Card 2B: MobileRun MCP -->
+                  <div class="aha-feature-card">
+                    <div class="aha-feature-info">
+                      <div class="aha-feature-title">MobileRun MCP Server</div>
+                      <div class="aha-feature-desc">Drives UI automation and on-device testing via ADB (auto-enabled when Verifier Gate is Full).</div>
+                    </div>
+                    <label class="switch-toggle" for="aha-opt-mcp-mobilerun" title="Toggle MobileRun MCP Server">
+                      <input type="checkbox" id="aha-opt-mcp-mobilerun" />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+
+                  <!-- Feature Card 3: Root Doc -->
+                  <div class="aha-feature-card">
+                    <div class="aha-feature-info">
+                      <div class="aha-feature-title">Root Delegation Rule</div>
+                      <div class="aha-feature-desc">Automatically splices harness routing guidelines into AGENTS.md or CLAUDE.md.</div>
+                    </div>
+                    <label class="switch-toggle" for="aha-opt-root-doc" title="Toggle Root Delegation Rule">
+                      <input type="checkbox" id="aha-opt-root-doc" checked />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+
+                  <!-- Feature Card 4: Git Exclude -->
+                  <div class="aha-feature-card" id="aha-opt-git-exclude-label">
+                    <div class="aha-feature-info">
+                      <div class="aha-feature-title">Git Exclude Protection</div>
+                      <div class="aha-feature-desc">Excludes harness files in .git/info/exclude to maintain a clean git working tree.</div>
+                    </div>
+                    <label class="switch-toggle" for="aha-opt-git-exclude" title="Toggle Git Exclude">
+                      <input type="checkbox" id="aha-opt-git-exclude" checked />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 5: Action Buttons & Guidance -->
+              <div class="aha-actions-footer">
+                <div class="aha-actions-group">
+                  <button type="button" class="btn-primary" id="btn-aha-init">
+                    <img src="icons/check.svg" width="14" height="14" alt="" />
+                    Initialize / Apply Harness
+                  </button>
+                  <button type="button" class="btn-secondary" id="btn-aha-update">
+                    <img src="icons/refresh.svg" width="14" height="14" alt="" />
+                    Update
+                  </button>
+                  <button type="button" class="btn-secondary btn-danger-ghost" id="btn-aha-undo">
+                    <img src="icons/trash.svg" width="14" height="14" alt="" />
+                    Undo / Remove
+                  </button>
+                </div>
+                <div class="aha-actions-tip">
+                  <span>💡 <strong>Apply</strong> provisions harness to active worktree. <strong>Update</strong> synchronizes skills preserving local edits.</span>
                 </div>
               </div>
             </div>
@@ -521,9 +737,9 @@
               <span class="workspace-tool-icon"><img src="icons/link.svg" width="16" height="16" alt="" /></span>
               <span class="workspace-tool-text">Symlinks</span>
             </button>
-            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-agent-toolkit" title="Agent Toolkit Setup" aria-label="Agent Toolkit Setup">
+            <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-agent-toolkit" title="Android Harness Setup (AHA)" aria-label="Android Harness Setup (AHA)">
               <span class="workspace-tool-icon"><img src="icons/agent-toolkit.svg" width="16" height="16" alt="" /></span>
-              <span class="workspace-tool-text">Toolkit Setup</span>
+              <span class="workspace-tool-text">AHA Setup</span>
             </button>
             <button type="button" class="workspace-tool-btn brand-logo-btn" id="btn-plane-tasks" title="Plane Task Management" aria-label="Plane Task Management">
               <span class="workspace-tool-icon"><img src="icons/task.svg" width="16" height="16" alt="" /></span>

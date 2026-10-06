@@ -96,3 +96,26 @@ test('buildWorktreeTree attaches nested worktrees under resolved parent paths', 
     ['C:\\Repo.subworktree\\nested-a']
   );
 });
+
+const macProject = {
+  path: '/Users/dev/Repo',
+  worktrees: [
+    { path: '/Users/dev/Repo', branch: 'main', name: 'root' },
+    { path: '/Users/dev/Repo.worktrees/Repo-FeatureA', branch: 'feature/a', name: 'official child' },
+    { path: '/Users/dev/Repo.subworktree/Repo-NestedA', branch: 'feature/nested-a', name: 'nested child a' },
+  ],
+};
+
+test('classifyWorktreeLocation handles macOS paths', () => {
+  assert.strictEqual(classifyWorktreeLocation(macProject, { path: '/Users/dev/Repo' }), 'root');
+  assert.strictEqual(classifyWorktreeLocation(macProject, { path: '/Users/dev/Repo/' }), 'root');
+  assert.strictEqual(classifyWorktreeLocation(macProject, { path: '/Users/dev/Repo.worktrees/Repo-FeatureA' }), 'official');
+  assert.strictEqual(classifyWorktreeLocation(macProject, { path: '/Users/dev/Repo.subworktree/Repo-NestedA' }), 'subworktree');
+  assert.strictEqual(classifyWorktreeLocation(macProject, { path: '/Users/dev/Repo.worktreesX/other' }), 'subworktree');
+});
+
+test('buildWorktreeTree nests macOS subworktrees under their parent', () => {
+  const roots = buildWorktreeTree(macProject, settings);
+  assert.deepStrictEqual(roots.map((node) => node.wt.branch), ['main', 'feature/a']);
+  assert.deepStrictEqual(roots[1].children.map((child) => child.wt.branch), ['feature/nested-a']);
+});

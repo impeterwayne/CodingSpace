@@ -1,10 +1,25 @@
-async function openAddWorktreeModal({ project, dom, api, getAvailableWorktreeBranches, getOfficialWorktreeBasePath, branchComboHTML, setupBranchCombo, syncWorktreePathInput, configureModalFooter, showModal, focusModalInputLater, hideModal, createWorktreeSubmitHandler }) {
+async function openAddWorktreeModal({ project, sourceWorktree = null, dom, api, esc, getAvailableWorktreeBranches, getOfficialWorktreeBasePath, branchComboHTML, setupBranchCombo, syncWorktreePathInput, configureModalFooter, showModal, focusModalInputLater, hideModal, createWorktreeSubmitHandler }) {
   dom.modalTitle.textContent = 'Add Worktree';
   const branches = await api.getBranches(project.path);
   const availableBranches = getAvailableWorktreeBranches(project, branches);
   const officialWorktreesDir = getOfficialWorktreeBasePath(project);
+  const sourceLabel = sourceWorktree ? (sourceWorktree.branch || sourceWorktree.name) : '';
+  const sourcePath = sourceWorktree?.path || project.path;
+
+  let sourceAhaStatus = null;
+  try {
+    sourceAhaStatus = await api.ahaGetStatus({ worktreePath: sourcePath });
+  } catch (_) {}
+  const hasAha = !!(sourceAhaStatus?.antigravity?.installed || sourceAhaStatus?.claude?.installed);
+  const activeTrack = sourceAhaStatus?.antigravity?.manifest?.track || sourceAhaStatus?.claude?.manifest?.track || 'xml';
 
   dom.modalBody.innerHTML = `
+    ${sourceWorktree ? `
+      <div class="form-group">
+        <label class="form-label">Source Branch</label>
+        <input class="form-input" value="${esc(sourceLabel)}" disabled />
+      </div>
+    ` : ''}
     <div class="form-group">
       <label class="form-label">Branch</label>
       ${branchComboHTML()}
@@ -13,7 +28,16 @@ async function openAddWorktreeModal({ project, dom, api, getAvailableWorktreeBra
       <label class="form-label">Worktree Path</label>
       <input class="form-input" id="wt-path-input" />
     </div>
-    <p class="form-hint">This creates an official worktree under <code>projectname.worktrees</code>. To add a subworktree, right-click an official worktree and choose <strong>Add sub worktree</strong>.</p>
+    ${hasAha ? `
+      <div class="form-group" style="margin-top: 14px; margin-bottom: 4px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="wt-clone-aha" checked style="cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent);" />
+          <span style="font-size: 13px; font-weight: 500; color: var(--text-default);">Clone Android Harness (AHA) into new worktree</span>
+        </label>
+        <span class="form-hint" style="margin-top: 3px; display: block;">Replicates ${sourceAhaStatus?.antigravity?.installed ? 'Antigravity' : 'Claude'} harness with <strong>${activeTrack}</strong> track into the new worktree.</span>
+      </div>
+    ` : ''}
+    <p class="form-hint">This creates an official worktree under <code>projectname.worktrees</code>${sourceWorktree ? `; a new branch starts from <strong>${esc(sourceLabel)}</strong>` : ''}. To add a subworktree, right-click an official worktree and choose <strong>Add nested worktree</strong>.</p>
   `;
 
   const pathInput = dom.modalBody.querySelector('#wt-path-input');
@@ -42,7 +66,8 @@ async function openAddWorktreeModal({ project, dom, api, getAvailableWorktreeBra
     pathInput,
     button: confirmBtn,
     buttonLabel: defaultConfirmLabel,
-    sourceWorktreePath: project.path,
+    sourceWorktreePath: sourceWorktree?.path || project.path,
+    sourceAhaStatus,
   }));
 }
 
@@ -57,6 +82,13 @@ async function openAddSubWorktreeModal({ project, sourceWorktree, dom, state, ap
   const availableBranches = getAvailableWorktreeBranches(project, branches);
   const subWorktreesDir = getWorktreeBasePath(project);
 
+  let sourceAhaStatus = null;
+  try {
+    sourceAhaStatus = await api.ahaGetStatus({ worktreePath: sourceWorktree.path });
+  } catch (_) {}
+  const hasAha = !!(sourceAhaStatus?.antigravity?.installed || sourceAhaStatus?.claude?.installed);
+  const activeTrack = sourceAhaStatus?.antigravity?.manifest?.track || sourceAhaStatus?.claude?.manifest?.track || 'xml';
+
   dom.modalBody.innerHTML = `
     <div class="form-group">
       <label class="form-label">Source Worktree</label>
@@ -70,6 +102,15 @@ async function openAddSubWorktreeModal({ project, sourceWorktree, dom, state, ap
       <label class="form-label">Worktree Path</label>
       <input class="form-input" id="sub-wt-path-input" />
     </div>
+    ${hasAha ? `
+      <div class="form-group" style="margin-top: 14px; margin-bottom: 4px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="wt-clone-aha" checked style="cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent);" />
+          <span style="font-size: 13px; font-weight: 500; color: var(--text-default);">Clone Android Harness (AHA) into new worktree</span>
+        </label>
+        <span class="form-hint" style="margin-top: 3px; display: block;">Replicates ${sourceAhaStatus?.antigravity?.installed ? 'Antigravity' : 'Claude'} harness with <strong>${activeTrack}</strong> track into the new worktree.</span>
+      </div>
+    ` : ''}
     <p class="form-hint">This creates a normal worktree from <strong>${esc(sourceWorktree.name)}</strong> and stores it under <code>projectname.subworktree</code>.</p>
   `;
 
@@ -101,6 +142,7 @@ async function openAddSubWorktreeModal({ project, sourceWorktree, dom, state, ap
     button: confirmBtn,
     buttonLabel: defaultConfirmLabel,
     sourceWorktreePath: sourceWorktree.path,
+    sourceAhaStatus,
     onSuccess: async (selectedBranch) => {
       const nextBranchParents = {
         ...(state.settings?.subworktreeBranchParents || {}),

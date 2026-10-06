@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execFileSync, spawn } = require('child_process');
 
 const isWindows = process.platform === 'win32';
@@ -20,6 +21,14 @@ function quotePosixArg(value) {
 
 function quoteShellArg(value) {
   return isWindows ? quoteWindowsArg(value) : quotePosixArg(value);
+}
+
+// Expands a leading `~` the way a POSIX shell would; needed when args bypass the shell.
+function expandHomeDir(inputPath) {
+  const value = String(inputPath || '');
+  if (value === '~') return os.homedir();
+  if (/^~[\\/]/u.test(value)) return path.join(os.homedir(), value.slice(2));
+  return value;
 }
 
 // ── PATH lookup ────────────────────────────────────────
@@ -180,6 +189,7 @@ module.exports = {
   quoteShellArg,
   findOnPath,
   syncPathFromLoginShell,
+  expandHomeDir,
   launchDetached,
   openExternalTerminal,
 };

@@ -1,0 +1,3 @@
+[submodule "toolkits/AndroidHarnessAGY"]
+	path = toolkits/AndroidHarnessAGY
+	url = https://github.com/impeterwayne/AndroidHarnessAGY.git

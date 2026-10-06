@@ -119,7 +119,7 @@ const state: {
     antigravityPath?: string;
     antigravityAgentPath?: string;
     claudeDesktopPath?: string;
-    openspecSourcePath?: string;
+    ahaSourcePath?: string;
     autoRefreshCurrentProject?: boolean;
     autoRefreshInterval?: number;
     planeApiKey?: string;
@@ -215,11 +215,13 @@ const dom = {
   settingsClaudeDesktopPath: $('#settings-claude-desktop-path'),
   settingsAndroidStudioPath: $('#settings-android-studio-path'),
   settingsVsCodePath: $('#settings-vscode-path'),
+  settingsAhaSourcePath: $('#settings-aha-source-path'),
   btnBrowseAntigravity: $('#btn-browse-antigravity'),
   btnBrowseAntigravityAgent: $('#btn-browse-antigravity-agent'),
   btnBrowseClaudeDesktop: $('#btn-browse-claude-desktop'),
   btnBrowseAndroidStudio: $('#btn-browse-android-studio'),
   btnBrowseVsCode: $('#btn-browse-vscode'),
+  btnBrowseAhaSource: $('#btn-browse-aha-source'),
   symlinkScreen: $('#symlink-screen'),
   btnCloseSymlinkScreen: $('#btn-close-symlink-screen'),
   symlinkScreenActiveName: $('#symlink-screen-active-name'),
@@ -233,9 +235,33 @@ const dom = {
   btnAgentToolkit: $('#btn-agent-toolkit'),
   agentToolkitScreen: $('#agent-toolkit-screen'),
   btnCloseAgentToolkitScreen: $('#btn-close-agent-toolkit-screen'),
-  agentToolkitActiveName: $('#agent-toolkit-active-name'),
-  agentToolkitActivePath: $('#agent-toolkit-active-path'),
-  agentToolkitListContainer: $('#agent-toolkit-list-container'),
+  agentToolkitActiveName: $('#agent-toolkit-active-worktree-name') || $('#agent-toolkit-active-name'),
+  agentToolkitActivePath: $('#agent-toolkit-active-worktree-path') || $('#agent-toolkit-active-path'),
+  ahaOverallStatusBadge: $('#aha-overall-status-badge'),
+  btnAhaRefreshStatus: $('#btn-aha-refresh-status'),
+  ahaStatusCard: $('#aha-status-card'),
+  ahaStatusContainer: $('#aha-status-container'),
+  ahaConfigPlatform: $('#aha-config-platform') as HTMLSelectElement | null,
+  ahaConfigTrack: $('#aha-config-track') as HTMLSelectElement | null,
+  ahaConfigProfile: $('#aha-config-profile') as HTMLSelectElement | null,
+  ahaConfigVerifier: $('#aha-config-verifier') as HTMLSelectElement | null,
+  ahaConfigDevice: $('#aha-config-device') as HTMLInputElement | null,
+  ahaDeviceSelect: $('#aha-device-select') as HTMLSelectElement | null,
+  btnAhaRefreshDevices: $('#btn-aha-refresh-devices'),
+  btnAhaSetDevice: $('#btn-aha-set-device'),
+  ahaDeviceLeaseStatus: $('#aha-device-lease-status'),
+  ahaConfigSubagentModel: $('#aha-config-subagent-model') as HTMLInputElement | null,
+  ahaSubagentModelGroup: $('#aha-subagent-model-group'),
+  ahaOptHooks: $('#aha-opt-hooks') as HTMLInputElement | null,
+  ahaOptMcpFigma: $('#aha-opt-mcp-figma') as HTMLInputElement | null,
+  ahaOptMcpMobilerun: $('#aha-opt-mcp-mobilerun') as HTMLInputElement | null,
+  ahaOptRootDoc: $('#aha-opt-root-doc') as HTMLInputElement | null,
+  ahaOptGitExclude: $('#aha-opt-git-exclude') as HTMLInputElement | null,
+  ahaOptGitExcludeLabel: $('#aha-opt-git-exclude-label'),
+  btnAhaInit: $('#btn-aha-init'),
+  btnAhaUpdate: $('#btn-aha-update'),
+  btnAhaUndo: $('#btn-aha-undo'),
+  ahaConfigQuickBadge: $('#aha-config-quick-badge'),
   btnPlaneTasks: $('#btn-plane-tasks'),
   planeTaskScreen: $('#plane-task-screen'),
   btnClosePlaneTaskScreen: $('#btn-close-plane-task-screen'),
@@ -336,12 +362,23 @@ setupBrowseButton(dom.btnBrowseClaudeDesktop, dom.settingsClaudeDesktopPath);
 setupBrowseButton(dom.btnBrowseAndroidStudio, dom.settingsAndroidStudioPath);
 setupBrowseButton(dom.btnBrowseVsCode, dom.settingsVsCodePath);
 
+if (dom.btnBrowseAhaSource && dom.settingsAhaSourcePath) {
+  dom.btnBrowseAhaSource.addEventListener('click', async () => {
+    const dir = await window.api.selectDirectory('Select Android Harness AGY Directory');
+    if (dir) {
+      dom.settingsAhaSourcePath.value = dir;
+      await saveSettingsFromUI();
+    }
+  });
+}
+
 const settingsInputs = [
   dom.settingsAntigravityPath,
   dom.settingsAntigravityAgentPath,
   dom.settingsClaudeDesktopPath,
   dom.settingsAndroidStudioPath,
   dom.settingsVsCodePath,
+  dom.settingsAhaSourcePath,
   dom.settingsPlaneApiKey,
 ];
 for (const input of settingsInputs) {
@@ -407,7 +444,7 @@ dom.btnRefreshAll.addEventListener('click', async () => {
   });
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
-    dom.sidebar.style.width = Math.min(500, Math.max(240, e.clientX)) + 'px';
+    dom.sidebar.style.width = Math.min(500, Math.max(200, e.clientX)) + 'px';
     fitActiveTerminal();
   });
   document.addEventListener('mouseup', () => {
@@ -525,7 +562,6 @@ const iconRaw = {
   copy: loadIcon('copy'),
   link: loadIcon('link'),
   'agent-toolkit': loadIcon('agent-toolkit'),
-  openspec: loadIcon('openspec'),
 };
 
 // Pre-sized icon strings matching original inline sizes
@@ -551,7 +587,6 @@ const icons = {
   link: iconSvg(iconRaw.link, 12),
   codex: iconSvg(iconRaw.codex, 12),
   agentToolkit: iconSvg(iconRaw['agent-toolkit'], 16),
-  openspec: iconSvg(iconRaw.openspec, 16),
 };
 
 const TOOL_TABS: Record<string, ToolTab> = {
@@ -815,7 +850,7 @@ async function refreshProjectWorkspaces(projectPath) {
   await loadWorkspaces();
 }
 
-function createWorktreeSubmitHandler({ project, combo, pathInput, button, buttonLabel, sourceWorktreePath, onSuccess }) {
+function createWorktreeSubmitHandler({ project, combo, pathInput, button, buttonLabel, sourceWorktreePath, onSuccess, sourceAhaStatus }: any) {
   return async () => {
     const { branch: selectedBranch, isNew } = combo.getSelected();
     if (!selectedBranch) { showToast('Please select or create a branch', 'error'); return; }
@@ -825,6 +860,9 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
       showToast('Invalid branch name', 'error');
       return;
     }
+
+    const cloneAhaCheckbox = document.getElementById('wt-clone-aha') as HTMLInputElement | null;
+    const shouldCloneAha = cloneAhaCheckbox ? cloneAhaCheckbox.checked : false;
 
     const result = await withAsyncButtonState(button, 'Creating...', async () => window.api.addWorktree({
       projectPath: project.path,
@@ -841,8 +879,39 @@ function createWorktreeSubmitHandler({ project, combo, pathInput, button, button
         const planeStatus = await window.api.checkSymlinkStatus({ worktreePath: mainPath, name: 'plane', targetPath: planeRoot });
         if (planeStatus?.isRealDirectory) await linkPlaneIntoWorktrees(planeRoot, [wtPath]);
       }
+
+      let clonedAhaMsg = '';
+      if (shouldCloneAha && sourceAhaStatus) {
+        try {
+          const isAgy = !!sourceAhaStatus.antigravity?.installed;
+          const plat = isAgy ? 'antigravity' : 'claude';
+          const platData = isAgy ? sourceAhaStatus.antigravity : sourceAhaStatus.claude;
+          const manifest = platData?.manifest;
+          if (manifest) {
+            const verifierMode = platData.effectiveVerifierMode || manifest.verifier_mode || 'compact';
+            const figmaOn = platData.figmaMcpOn;
+            const mobilerunOn = platData.mobilerunMcpOn;
+            await window.api.ahaInit({
+              worktreePath: wtPath,
+              ahaPath: state.settings?.ahaSourcePath,
+              platform: plat,
+              track: manifest.track,
+              profile: manifest.profile,
+              verifierMode,
+              subagentModel: manifest.subagent_model,
+              mcp: figmaOn ? 'figma' : 'none',
+              noMcp: !figmaOn && !mobilerunOn,
+              force: true,
+            });
+            clonedAhaMsg = ' (with AHA harness)';
+          }
+        } catch (err: any) {
+          console.error('Failed to clone AHA harness:', err);
+        }
+      }
+
       if (onSuccess) await onSuccess(selectedBranch);
-      showToast(`Worktree created: ${selectedBranch}`, 'success');
+      showToast(`Worktree created: ${selectedBranch}${clonedAhaMsg}`, 'success');
       hideModal();
       await refreshProjectWorkspaces(project.path);
       return;
@@ -869,7 +938,7 @@ async function createTerminal(cwd, name, { worktreePath = '', iconKey = 'termina
   // Create xterm instance with Windows Terminal theme
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -976,7 +1045,7 @@ async function createDirectToolTerminal(cwd, name, options: { command?: string; 
 
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -1208,7 +1277,7 @@ function promotePrewarmedTerminal(toolKey) {
 
   const term = new Terminal({
     theme: WT_THEME,
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
+    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace",
     fontSize: 14,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -1849,6 +1918,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
   hideTabDropdown();
   hideSelectionContextMenu();
   const canAddSubWorktree = getDomainCanCreateNestedWorktree(project, wt);
+  const canAddWorktreeFromLocal = getDomainClassifyWorktreeLocation(project, wt) === 'root' && !wt.bare;
   const canDeleteBranch = Boolean(wt.branch) && !wt.detached && !wt.bare;
 
   const menu = showPositionedMenu({
@@ -1857,6 +1927,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
     x,
     y,
     html: `
+      ${canAddWorktreeFromLocal ? `${menuItemHTML({ action: 'add-wt-from-local', icon: icons.plus, label: 'Add worktree from here' })}${menuDividerHTML()}` : ''}
       ${canAddSubWorktree ? `${menuItemHTML({ action: 'add-sub-worktree', icon: icons.plus, label: 'Add nested worktree' })}${menuDividerHTML()}` : ''}
       ${menuItemHTML({ action: 'merge-to-local-branch', icon: icons.gitBranch, label: 'Merge to local branch' })}
       ${menuDividerHTML()}
@@ -1866,6 +1937,7 @@ function showWorktreeContextMenu(project, wt, x, y) {
   });
 
   bindMenuActions(menu, {
+    'add-wt-from-local': () => showAddWorktreeModal(project, wt),
     'add-sub-worktree': () => showAddSubWorktreeModal(project, wt),
     'merge-to-local-branch': () => showMergeWorktreeModal(project, wt),
     'force-remove-worktree': () => showForceRemoveWorktreeModal(project, wt),
@@ -2459,6 +2531,7 @@ async function saveSettingsFromUI() {
     androidStudioPath: dom.settingsAndroidStudioPath ? cleanVal(dom.settingsAndroidStudioPath.value) : '',
     vscodePath: dom.settingsVsCodePath ? cleanVal(dom.settingsVsCodePath.value) : '',
     claudeDesktopPath: dom.settingsClaudeDesktopPath ? cleanVal(dom.settingsClaudeDesktopPath.value) : '',
+    ahaSourcePath: dom.settingsAhaSourcePath ? cleanVal(dom.settingsAhaSourcePath.value) : '',
     autoRefreshCurrentProject: dom.settingsAutoRefresh ? dom.settingsAutoRefresh.checked : true,
     autoRefreshInterval: isNaN(intervalVal) || intervalVal < 1 ? 10 : intervalVal,
     planeApiKey: dom.settingsPlaneApiKey ? dom.settingsPlaneApiKey.value.trim() : state.settings?.planeApiKey || '',
@@ -2473,6 +2546,7 @@ async function showSettingsScreen() {
     if (dom.settingsClaudeDesktopPath) dom.settingsClaudeDesktopPath.value = state.settings.claudeDesktopPath || 'detecting...';
     if (dom.settingsAndroidStudioPath) dom.settingsAndroidStudioPath.value = state.settings.androidStudioPath || 'detecting...';
     if (dom.settingsVsCodePath) dom.settingsVsCodePath.value = state.settings.vscodePath || 'detecting...';
+    if (dom.settingsAhaSourcePath) dom.settingsAhaSourcePath.value = state.settings.ahaSourcePath || '';
     if (dom.settingsAutoRefresh) dom.settingsAutoRefresh.checked = !!state.settings.autoRefreshCurrentProject;
     if (dom.settingsAutoRefreshInterval) dom.settingsAutoRefreshInterval.value = String(state.settings.autoRefreshInterval || 10);
     if (dom.settingsPlaneApiKey) dom.settingsPlaneApiKey.value = state.settings.planeApiKey || '';
@@ -2841,11 +2915,13 @@ if (dom.btnAddSymlinkScreenTarget) {
 }
 
 // ── Add Worktree Modal ─────────────────────────────────
-async function showAddWorktreeModal(project) {
+async function showAddWorktreeModal(project, sourceWorktree = null) {
   return openAddWorktreeModal({
     project,
+    sourceWorktree,
     dom,
     api: window.api,
+    esc,
     getAvailableWorktreeBranches,
     getOfficialWorktreeBasePath,
     branchComboHTML,
@@ -2921,7 +2997,358 @@ async function showForceRemoveWorktreeModal(project, wt) {
   });
 }
 
-// ── Agent Toolkit Screen ───────────────────────────────────
+// ── Android Harness AGY (AHA) Setup Screen ─────────────────
+
+const AHA_TRACKS_INFO: Record<string, { name: string; hint: string }> = {
+  xml: {
+    name: 'Views & XML Layouts',
+    hint: 'Views, ViewBinding, ShapeView, GlideImageView, Epoxy controllers, and rules/xml.md.',
+  },
+  compose: {
+    name: 'Jetpack Compose',
+    hint: 'Jetpack Compose, AppTheme tokens, Landscapist Glide, Orbit MVI, and rules/android.md.',
+  },
+};
+
+const AHA_PROFILES_INFO: Record<string, { name: string; hint: string }> = {
+  full: {
+    name: 'Full Harness',
+    hint: 'Entire track payload: 30+ skills, 8 autonomous subagents, and 3 architectural rules.',
+  },
+  android: {
+    name: 'Core Android',
+    hint: 'Core Android development without Figma pipeline (29+ skills, 5 subagents).',
+  },
+  figma: {
+    name: 'Figma Design-to-Code',
+    hint: 'Design-to-code sprint: Figma spec parsing, asset extraction, and UI building.',
+  },
+  minimal: {
+    name: 'Minimal / Review',
+    hint: 'Lean review, code health, debt reduction, and fast goal loops.',
+  },
+};
+
+const AHA_VERIFIERS_INFO: Record<string, { name: string; hint: string }> = {
+  compact: {
+    name: 'Compact',
+    hint: 'Runs Gradle assemble & unit tests on task completion. Standard safety gate without requiring a device.',
+  },
+  minimal: {
+    name: 'Minimal',
+    hint: 'Runs lint checks & diff non-negotiables only. Fastest mode for rapid iterations without full assemble.',
+  },
+  full: {
+    name: 'Full (MobileRun)',
+    hint: 'Runs Gradle assemble, unit tests, and launches the app on target device via MobileRun for verification.',
+  },
+};
+
+function updateAhaConfigUI() {
+  const platform = dom.ahaConfigPlatform?.value || 'antigravity';
+  const trackKey = dom.ahaConfigTrack?.value || 'xml';
+  const profileKey = dom.ahaConfigProfile?.value || 'full';
+  const verifierKey = dom.ahaConfigVerifier?.value || 'compact';
+
+  const trackInfo = AHA_TRACKS_INFO[trackKey] || AHA_TRACKS_INFO.xml;
+  const profileInfo = AHA_PROFILES_INFO[profileKey] || AHA_PROFILES_INFO.full;
+  const verifierInfo = AHA_VERIFIERS_INFO[verifierKey] || AHA_VERIFIERS_INFO.compact;
+
+  const platformHint = document.getElementById('aha-platform-hint');
+  if (platformHint) {
+    platformHint.textContent = platform === 'claude'
+      ? 'Targets Claude Code with .claude/ subagents, CLAUDE.md routing, and .mcp.json servers.'
+      : 'Targets Google Antigravity IDE & CLI with .agents/ rules and AGENTS.md orchestration.';
+  }
+
+  const trackHint = document.getElementById('aha-track-hint');
+  if (trackHint) {
+    trackHint.textContent = trackInfo.hint;
+  }
+
+  const profileHint = document.getElementById('aha-profile-hint');
+  if (profileHint) {
+    profileHint.textContent = profileInfo.hint;
+  }
+
+  const verifierHint = document.getElementById('aha-verifier-hint');
+  if (verifierHint) {
+    verifierHint.textContent = verifierInfo.hint;
+  }
+
+  if (dom.ahaConfigQuickBadge) {
+    const platLabel = platform === 'claude' ? 'Claude Code' : 'Antigravity';
+    dom.ahaConfigQuickBadge.innerHTML = `
+      <span>Platform: <strong>${platLabel}</strong></span>
+      <span style="opacity: 0.3;">•</span>
+      <span>Track: <strong>${trackInfo.name}</strong></span>
+      <span style="opacity: 0.3;">•</span>
+      <span>Scope: <strong>${profileInfo.name}</strong></span>
+      <span style="opacity: 0.3;">•</span>
+      <span>Verifier: <strong>${verifierInfo.name}</strong></span>
+    `;
+  }
+
+  if (dom.ahaOptMcpMobilerun && dom.ahaConfigVerifier) {
+    dom.ahaOptMcpMobilerun.checked = (dom.ahaConfigVerifier.value === 'full');
+  }
+}
+
+async function refreshAhaStatus() {
+  const activeWorktreePath = state.activeWorktreePath;
+  const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
+
+  if (dom.agentToolkitActiveName) dom.agentToolkitActiveName.textContent = activeWorktreeName;
+  if (dom.agentToolkitActivePath) dom.agentToolkitActivePath.textContent = activeWorktreePath || 'Please select a worktree first.';
+
+  if (!dom.ahaStatusContainer) return;
+
+  if (!activeWorktreePath) {
+    dom.ahaStatusContainer.innerHTML = `<div class="symlink-empty-state">Please select an active worktree from the sidebar first.</div>`;
+    if (dom.ahaOverallStatusBadge) {
+      dom.ahaOverallStatusBadge.innerHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(255, 255, 255, 0.05); color: var(--text-tertiary); border: 1px solid var(--border-subtle);">No Worktree</span>`;
+    }
+    return;
+  }
+
+  dom.ahaStatusContainer.innerHTML = `<div style="display:flex; justify-content:center; padding:16px; align-items:center; gap:8px;"><span class="spinner"></span> Reading harness status...</div>`;
+
+  try {
+    const statusData = await window.api.ahaGetStatus({
+      worktreePath: activeWorktreePath,
+      ahaPath: state.settings.ahaSourcePath,
+    });
+
+    if (statusData.error) {
+      dom.ahaStatusContainer.innerHTML = `<div style="color:var(--danger-default); padding:12px;">${statusData.error}</div>`;
+      return;
+    }
+
+    const { ahaPath, hasAhaPy, antigravity, claude } = statusData;
+
+    let overallHtml = '';
+    const hasAnyInstalled = (antigravity && antigravity.installed) || (claude && claude.installed);
+
+    if (dom.ahaOverallStatusBadge) {
+      if (hasAnyInstalled) {
+        const activeTrack = (antigravity?.manifest?.track || claude?.manifest?.track || 'xml').toUpperCase();
+        dom.ahaOverallStatusBadge.innerHTML = `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); border: 1px solid rgba(16, 185, 129, 0.25);">Active (${activeTrack})</span>`;
+      } else {
+        dom.ahaOverallStatusBadge.innerHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(255, 255, 255, 0.05); color: var(--text-tertiary); border: 1px solid var(--border-subtle);">Not Installed</span>`;
+      }
+    }
+
+    if (!hasAhaPy) {
+      overallHtml += `
+        <div style="padding: 12px 14px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-md); color: rgb(248, 113, 113); font-size: 13px;">
+          <strong>AHA Source Missing:</strong> Could not find <code>aha.py</code> in <code>${ahaPath}</code>.
+          Please ensure the git submodule is initialized with <code>git submodule update --init</code> or configure the AHA Source Path in Settings.
+        </div>
+      `;
+    }
+
+    const renderPlatformCard = (title: string, platId: string, platData: any) => {
+      if (!platData || !platData.installed) {
+        return `
+          <div style="background: var(--bg-elevated); border: 1px dashed var(--border-subtle); border-radius: var(--radius-md); padding: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-weight: 600; font-size: 13px; color: var(--text-secondary);">${title}</span>
+              <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Not installed in this worktree</div>
+            </div>
+            <span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Idle</span>
+          </div>
+        `;
+      }
+
+      const m = platData.manifest || {};
+      const statusText = platData.statusOutput ? platData.statusOutput.trim() : '';
+      const summaryLines = statusText.split(/\r?\n/).filter((l: string) => l.includes('unchanged') || l.includes('edited locally') || l.includes('stale') || l.includes('block current'));
+      const statusSummary = summaryLines.join(' · ') || 'Manifest verified current.';
+
+      const effectiveMode = platData.effectiveVerifierMode || m.verifier_mode || 'compact';
+      const hasLocalOverride = !!platData.localVerifierMode;
+      const prefDevice = platData.localDevice || '';
+      const mobilerunOn = platData.mobilerunMcpOn;
+      const figmaOn = platData.figmaMcpOn;
+      const isOutdated = statusData.hasUpdateAvailable || statusText.includes('SOURCE MOVED');
+
+      return `
+        <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-weight: 700; font-size: 14px; color: var(--text-default);">${title}</span>
+              <span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); font-size: 11px; padding: 2px 8px;">Active</span>
+            </div>
+            <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-tertiary);">commit ${m.commit || 'unknown'}</span>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; margin-top: 2px;">
+            <span style="padding: 2px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-default);">Track: <strong>${m.track || 'xml'}</strong></span>
+            <span style="padding: 2px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-default);">Profile: <strong>${m.profile || 'full'}</strong></span>
+            <span style="padding: 2px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-default);">Verifier: <strong>${effectiveMode}</strong> ${hasLocalOverride ? '<em style="font-size:10px; color:var(--accent);">(override)</em>' : '<em style="font-size:10px; color:var(--text-tertiary);">(default)</em>'}</span>
+            ${prefDevice ? `<span style="padding: 2px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-default);">Device: <strong>${prefDevice}</strong></span>` : ''}
+            ${m.installed_at ? `<span style="padding: 2px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-tertiary);">Installed: ${m.installed_at.replace('T', ' ')}</span>` : ''}
+          </div>
+
+          <!-- Quick Verifier Switcher -->
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Switch Verifier:</span>
+            <button type="button" class="btn-sm-badge ${effectiveMode === 'minimal' ? 'active' : ''}" data-action="set-verifier" data-platform="${platId}" data-mode="minimal" title="Lint checks & non-negotiables only">Minimal</button>
+            <button type="button" class="btn-sm-badge ${effectiveMode === 'compact' ? 'active' : ''}" data-action="set-verifier" data-platform="${platId}" data-mode="compact" title="Gradle assemble & unit tests">Compact</button>
+            <button type="button" class="btn-sm-badge ${effectiveMode === 'full' ? 'active' : ''}" data-action="set-verifier" data-platform="${platId}" data-mode="full" title="Assemble, tests & MobileRun app launch">Full (MobileRun)</button>
+            ${hasLocalOverride ? `<button type="button" class="btn-sm-badge btn-sm-reset" data-action="reset-verifier" data-platform="${platId}" title="Reset to project default (${m.verifier_mode || 'compact'})">Reset</button>` : ''}
+          </div>
+
+          <!-- MCP Servers (Separate Controls for Figma and MobileRun) -->
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">MCP Servers:</div>
+
+            <!-- Figma MCP Row -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 5px 8px; border-radius: 4px; border: 1px solid var(--border-subtle);">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-default);">Figma MCP:</span>
+                <span style="padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: ${figmaOn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(107, 114, 128, 0.15)'}; color: ${figmaOn ? 'rgb(52, 211, 153)' : 'var(--text-tertiary)'}; border: 1px solid ${figmaOn ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)'};">
+                  ${figmaOn ? 'ON' : 'OFF'}
+                </span>
+                <span style="color: var(--text-tertiary); font-size: 10px;">(design-to-code)</span>
+              </div>
+              <button type="button" class="btn-sm-badge ${figmaOn ? 'active' : ''}" data-action="toggle-figma-mcp" data-platform="${platId}" data-state="${figmaOn ? 'off' : 'on'}" title="${figmaOn ? 'Turn Off Figma MCP server' : 'Turn On Figma MCP server'}">
+                Turn ${figmaOn ? 'OFF' : 'ON'}
+              </button>
+            </div>
+
+            <!-- MobileRun MCP Row -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 5px 8px; border-radius: 4px; border: 1px solid var(--border-subtle);">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-default);">MobileRun MCP:</span>
+                <span style="padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: ${mobilerunOn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(107, 114, 128, 0.15)'}; color: ${mobilerunOn ? 'rgb(52, 211, 153)' : 'var(--text-tertiary)'}; border: 1px solid ${mobilerunOn ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)'};">
+                  ${mobilerunOn ? 'ON' : 'OFF'}
+                </span>
+                <span style="color: var(--text-tertiary); font-size: 10px;">(device UI testing)</span>
+              </div>
+              <button type="button" class="btn-sm-badge ${mobilerunOn ? 'active' : ''}" data-action="toggle-mobilerun-mcp" data-platform="${platId}" data-state="${mobilerunOn ? 'off' : 'on'}" title="${mobilerunOn ? 'Turn Off MobileRun MCP (sets verifier to compact)' : 'Turn On MobileRun MCP (sets verifier to full)'}">
+                Turn ${mobilerunOn ? 'OFF' : 'ON'}
+              </button>
+            </div>
+          </div>
+
+          ${isOutdated ? `
+            <div class="aha-update-alert" style="margin-top: 4px;">
+              <span>⚡ <strong>Update Available:</strong> AHA upstream source has moved.</span>
+              <button type="button" class="btn-primary" data-action="quick-update-aha" data-platform="${platId}" style="padding: 3px 10px; font-size: 11px;">Update</button>
+            </div>
+          ` : ''}
+
+          <div style="font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 2px;">
+            ${statusSummary}
+          </div>
+        </div>
+      `;
+    };
+
+    overallHtml += `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; width: 100%;">
+        ${renderPlatformCard('Antigravity IDE & CLI', 'antigravity', antigravity)}
+        ${renderPlatformCard('Claude Code', 'claude', claude)}
+      </div>
+    `;
+
+    dom.ahaStatusContainer.innerHTML = overallHtml;
+
+    // Pre-populate form dropdowns if installed config exists
+    const activePlatData = antigravity?.installed ? antigravity : claude?.installed ? claude : null;
+    if (activePlatData) {
+      if (dom.ahaConfigTrack && activePlatData.manifest?.track) dom.ahaConfigTrack.value = activePlatData.manifest.track;
+      if (dom.ahaConfigProfile && activePlatData.manifest?.profile) dom.ahaConfigProfile.value = activePlatData.manifest.profile;
+      if (dom.ahaConfigVerifier) dom.ahaConfigVerifier.value = activePlatData.effectiveVerifierMode || 'compact';
+      if (dom.ahaOptMcpFigma) dom.ahaOptMcpFigma.checked = !!activePlatData.figmaMcpOn;
+      if (dom.ahaOptMcpMobilerun) dom.ahaOptMcpMobilerun.checked = !!activePlatData.mobilerunMcpOn;
+      if (dom.ahaConfigDevice && activePlatData.localDevice) dom.ahaConfigDevice.value = activePlatData.localDevice;
+      if (antigravity?.installed && !claude?.installed && dom.ahaConfigPlatform) dom.ahaConfigPlatform.value = 'antigravity';
+      else if (claude?.installed && !antigravity?.installed && dom.ahaConfigPlatform) dom.ahaConfigPlatform.value = 'claude';
+    }
+
+    updateAhaConfigUI();
+    await refreshAhaDevices();
+  } catch (err: any) {
+    dom.ahaStatusContainer.innerHTML = `<div style="color:var(--danger-default); padding:12px;">Failed to load harness status: ${err.message}</div>`;
+  }
+}
+
+async function refreshAhaDevices() {
+  const activeWorktreePath = state.activeWorktreePath;
+  if (!dom.ahaDeviceSelect) return;
+
+  try {
+    const res = await window.api.ahaDevicesList({
+      worktreePath: activeWorktreePath,
+      ahaPath: state.settings.ahaSourcePath,
+    });
+
+    if (!res.success || !res.data) {
+      dom.ahaDeviceSelect.innerHTML = `<option value="">No devices found (${res.error || 'adb check failed'})</option>`;
+      if (dom.ahaDeviceLeaseStatus) dom.ahaDeviceLeaseStatus.style.display = 'none';
+      return;
+    }
+
+    const { devices = [] } = res.data;
+    let myLeasedDevice: any = null;
+
+    if (devices.length === 0) {
+      dom.ahaDeviceSelect.innerHTML = `<option value="">No devices attached (connect phone via USB or start emulator)</option>`;
+    } else {
+      let html = `<option value="">-- Select or Auto-detect Device --</option>`;
+      devices.forEach((dev: any) => {
+        if (dev.mine) myLeasedDevice = dev;
+        const statusLabel = dev.mine
+          ? 'Leased to this worktree'
+          : dev.owner
+            ? 'Busy (leased by another worktree)'
+            : 'Available (Free)';
+        html += `<option value="${dev.serial}">${dev.serial} - ${statusLabel}</option>`;
+      });
+      dom.ahaDeviceSelect.innerHTML = html;
+    }
+
+    if (dom.ahaDeviceLeaseStatus) {
+      if (myLeasedDevice) {
+        const minsLeft = Math.max(1, Math.round(myLeasedDevice.expires_in / 60));
+        dom.ahaDeviceLeaseStatus.style.display = 'block';
+        dom.ahaDeviceLeaseStatus.innerHTML = `
+          <div class="aha-device-lease-box">
+            <span>📱 <strong>Active Lease:</strong> Device <code>${myLeasedDevice.serial}</code> held by this worktree (expires in ${minsLeft}m).</span>
+            <button type="button" class="btn-sm-badge btn-sm-reset" id="btn-aha-release-lease" style="color: var(--danger-default);">Release Lease</button>
+          </div>
+        `;
+        const btnRelease = document.getElementById('btn-aha-release-lease');
+        if (btnRelease) {
+          btnRelease.addEventListener('click', async () => {
+            showToast('Releasing device lease...', 'info');
+            const relRes = await window.api.ahaDevicesRelease({
+              worktreePath: activeWorktreePath,
+              ahaPath: state.settings.ahaSourcePath,
+            });
+            if (relRes.success) {
+              showToast('Device lease released.', 'success');
+              await refreshAhaDevices();
+              await refreshAhaStatus();
+            } else {
+              showToast(`Failed to release lease: ${relRes.error}`, 'error');
+            }
+          });
+        }
+      } else {
+        dom.ahaDeviceLeaseStatus.style.display = 'none';
+        dom.ahaDeviceLeaseStatus.innerHTML = '';
+      }
+    }
+  } catch (err: any) {
+    if (dom.ahaDeviceSelect) {
+      dom.ahaDeviceSelect.innerHTML = `<option value="">Device scan failed: ${err.message}</option>`;
+    }
+  }
+}
+
 async function showAgentToolkitScreen() {
   const activeWorktreePath = state.activeWorktreePath;
   const activeWorktreeName = activeWorktreePath ? activeWorktreePath.split(/[\\/]/).pop() : 'No active project';
@@ -2934,7 +3361,8 @@ async function showAgentToolkitScreen() {
   if (dom.planeTaskScreen) dom.planeTaskScreen.classList.add('hidden');
   if (dom.agentToolkitScreen) dom.agentToolkitScreen.classList.remove('hidden');
 
-  await refreshAgentToolkitStatus();
+  updateAhaConfigUI();
+  await refreshAhaStatus();
 }
 
 function hideAgentToolkitScreen() {
@@ -2943,420 +3371,350 @@ function hideAgentToolkitScreen() {
   startAutoRefreshLoop();
 }
 
-// Toolkit components to link/manage
-const TOOLKIT_COMPONENTS = [
-  // --- OpenSpec Group Components ---
-  {
-    id: 'openspec_core',
-    name: 'OpenSpec Core Infrastructure',
-    folderName: 'openspec',
-    description: 'Core OpenSpec configuration and specs folder.',
-    gitExcludePatterns: ['openspec/']
-  },
-  {
-    id: 'openspec_claude',
-    name: 'Claude OpenSpec Skills',
-    folderName: '.claude/skills',
-    description: 'Claude-specific skills and agent instructions.',
-    gitExcludePatterns: ['.claude/skills/openspec-*/']
-  },
-  {
-    id: 'openspec_codex',
-    name: 'Codex OpenSpec Skills',
-    folderName: '.codex/skills',
-    description: 'Codex-specific skills and custom Codex settings.',
-    gitExcludePatterns: ['.codex/skills/openspec-*/']
-  },
-  {
-    id: 'openspec_opencode',
-    name: 'OpenCode OpenSpec Skills',
-    isMulti: true,
-    folders: [
-      { name: '.opencode/skills', pattern: '.opencode/skills/' },
-      { name: '.opencode/commands', pattern: '.opencode/commands/' }
-    ],
-    description: 'OpenCode-specific skills and tools.',
-    gitExcludePatterns: ['.opencode/skills/openspec-*/', '.opencode/commands/openspec-*/']
-  },
-  {
-    id: 'openspec_antigravity',
-    name: 'Antigravity OpenSpec Workflows',
-    isMulti: true,
-    folders: [
-      { name: '.agents/skills', pattern: '.agents/skills/' },
-      { name: '.agents/workflows', pattern: '.agents/workflows/' }
-    ],
-    description: 'Deploys OpenSpec shared skills and slash-command workflows.',
-    gitExcludePatterns: ['.agents/skills/openspec-*/', '.agents/workflows/opsx-*']
-  }
-];
+// ── AHA Setup Event Listeners ──────────────────────────────
 
-async function refreshAgentToolkitStatus() {
-  const activeWorktreePath = state.activeWorktreePath;
-  const projectPath = state.selectedProjectPath || (state.projects[0] ? state.projects[0].path : null);
-  
-  if (!activeWorktreePath || !projectPath) {
-    if (dom.agentToolkitListContainer) {
-      dom.agentToolkitListContainer.innerHTML = `<div class="symlink-empty-state">No Active Worktree or Project path found.</div>`;
+if (dom.ahaConfigPlatform) {
+  dom.ahaConfigPlatform.addEventListener('change', () => {
+    const isClaude = dom.ahaConfigPlatform?.value === 'claude';
+    if (dom.ahaSubagentModelGroup) dom.ahaSubagentModelGroup.style.display = isClaude ? '' : 'none';
+    if (dom.ahaOptGitExcludeLabel) dom.ahaOptGitExcludeLabel.style.display = isClaude ? 'none' : '';
+    updateAhaConfigUI();
+  });
+}
+
+if (dom.ahaConfigTrack) {
+  dom.ahaConfigTrack.addEventListener('change', updateAhaConfigUI);
+}
+
+if (dom.ahaConfigProfile) {
+  dom.ahaConfigProfile.addEventListener('change', updateAhaConfigUI);
+}
+
+if (dom.ahaConfigVerifier) {
+  dom.ahaConfigVerifier.addEventListener('change', () => {
+    if (dom.ahaOptMcpMobilerun) {
+      dom.ahaOptMcpMobilerun.checked = dom.ahaConfigVerifier?.value === 'full';
     }
-    return;
-  }
+    updateAhaConfigUI();
+  });
+}
 
-  // 1. Determine openspecSourcePath (setting -> embedded defaults -> candidates -> default)
-  const defaultSources = await window.api.getDefaultToolkitSources();
-  let openspecPath = state.settings.openspecSourcePath || '';
-  if (!openspecPath) {
-    if (await window.api.pathExists(defaultSources.openspecPath)) {
-      openspecPath = defaultSources.openspecPath;
-    } else {
-      const openspecCandidates = [
-        joinPath(projectPath, 'OpenSpec'),
-        joinPath(projectPath, 'openspec'),
-        joinPath(projectPath, 'openspec-source')
-      ];
-      for (const cand of openspecCandidates) {
-        if (await window.api.pathExists(cand)) {
-          openspecPath = cand;
-          break;
-        }
+if (dom.ahaOptMcpMobilerun) {
+  dom.ahaOptMcpMobilerun.addEventListener('change', () => {
+    if (dom.ahaConfigVerifier) {
+      if (dom.ahaOptMcpMobilerun.checked) {
+        dom.ahaConfigVerifier.value = 'full';
+      } else if (dom.ahaConfigVerifier.value === 'full') {
+        dom.ahaConfigVerifier.value = 'compact';
       }
     }
-  }
-  if (!openspecPath) {
-    openspecPath = defaultSources.openspecPath;
-  }
+    updateAhaConfigUI();
+  });
+}
 
-  const listContainer = dom.agentToolkitListContainer;
-  if (!listContainer) return;
-
-  const savedScrollTop = listContainer.scrollTop;
-
-  if (!listContainer.innerHTML || listContainer.innerHTML.includes('No Active Worktree') || listContainer.innerHTML.includes('No active project')) {
-    listContainer.innerHTML = `<div style="display:flex; justify-content:center; padding:16px; align-items:center; gap:8px;"><span class="spinner"></span> Checking status...</div>`;
-  }
-
-  try {
-    const OPENSPEC_PLATFORMS = [
-      { id: 'openspec_antigravity', name: 'Antigravity', description: 'Deploys OpenSpec shared skills and slash-command workflows.' },
-      { id: 'openspec_claude', name: 'Claude', description: 'Deploys Claude-specific skills and agent instructions.' },
-      { id: 'openspec_codex', name: 'Codex', description: 'Deploys Codex-specific skills and custom Codex settings.' },
-      { id: 'openspec_opencode', name: 'OpenCode', description: 'Deploys OpenCode-specific skills and command definitions.' }
-    ];
-
-    // Fetch statuses for all components
-    const statuses = await Promise.all(TOOLKIT_COMPONENTS.map(async (comp) => {
-      const srcBase = openspecPath;
-      
-      let sourceExists = false;
-      try {
-        if (comp.isMulti) {
-          const folderChecks = await Promise.all(comp.folders.map(async (f) => {
-            return await window.api.pathExists(joinPath(srcBase, f.name));
-          }));
-          sourceExists = folderChecks.every(v => v);
-        } else {
-          sourceExists = await window.api.pathExists(joinPath(srcBase, comp.folderName));
-        }
-      } catch (err) {
-        sourceExists = false;
-      }
-
-      let exists = false;
-      if (comp.isMulti) {
-        const subResults = await Promise.all(comp.folders.map(async (f) => {
-          try {
-            const status = await window.api.checkToolkitStatus({
-              worktreePath: activeWorktreePath,
-              name: f.name,
-              sourcePath: joinPath(srcBase, f.name)
-            });
-            return status.exists;
-          } catch (e) {
-            return false;
-          }
-        }));
-        exists = subResults.every(r => r);
-      } else {
-        try {
-          const status = await window.api.checkToolkitStatus({
-            worktreePath: activeWorktreePath,
-            name: comp.folderName,
-            sourcePath: joinPath(srcBase, comp.folderName)
-          });
-          exists = status.exists;
-        } catch (e) {
-          exists = false;
-        }
-      }
-
-      // If it's an OpenSpec platform component, also require that openspec core exists
-      if (exists && comp.id.startsWith('openspec_') && comp.id !== 'openspec_core') {
-        try {
-          const coreStatus = await window.api.checkToolkitStatus({
-            worktreePath: activeWorktreePath,
-            name: 'openspec',
-            sourcePath: joinPath(openspecPath, 'openspec')
-          });
-          if (!coreStatus.exists) {
-            exists = false;
-          }
-        } catch (e) {
-          exists = false;
-        }
-      }
-
-      return {
-        id: comp.id,
-        name: comp.name,
-        sourceExists,
-        exists
-      };
-    }));
-
-    const getStatus = (id) => statuses.find(s => s.id === id) || { exists: false, sourceExists: false };
-
-    function renderPlatformItem(platform) {
-      const stateItem = getStatus(platform.id);
-      let badgeHTML = '';
-      let checked = '';
-      let disabledAttr = '';
-      let opacityStyle = '';
-
-      if (!stateItem.sourceExists) {
-        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(239, 68, 68, 0.15); color: rgb(248, 113, 113); border: 1px solid rgba(239, 68, 68, 0.25);">Source Missing</span>`;
-        disabledAttr = 'disabled';
-        opacityStyle = 'opacity: 0.65;';
-      } else if (stateItem.exists) {
-        badgeHTML = `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); border: 1px solid rgba(16, 185, 129, 0.25);">Active</span>`;
-        checked = 'checked';
-      } else {
-        badgeHTML = `<span class="symlink-status-badge symlink-status-unlinked" style="background: rgba(255, 255, 255, 0.05); color: var(--text-tertiary); border: 1px solid var(--border-subtle);">Not Present</span>`;
-      }
-
-      // Determine platform icon based on ID prefix/suffix
-      let platformIcon = '';
-      if (platform.id.includes('antigravity')) {
-        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: var(--accent-default); width: 16px; height: 16px;">${icons.antigravity}</span>`;
-      } else if (platform.id.includes('claude')) {
-        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #d97706; width: 16px; height: 16px;">${icons.claude}</span>`;
-      } else if (platform.id.includes('codex')) {
-        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #2563eb; width: 16px; height: 16px;">${icons.codex}</span>`;
-      } else if (platform.id.includes('opencode')) {
-        platformIcon = `<span style="display: inline-flex; align-items: center; justify-content: center; color: #4b5563; width: 16px; height: 16px;">${icons.opencode}</span>`;
-      }
-
-      return `
-        <div class="symlink-item" style="margin-bottom: 8px; border-radius: var(--radius-md); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); ${opacityStyle}">
-          <label class="symlink-label" style="cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; gap: 8px; width: 100%;">
-            <input type="checkbox" class="agent-toolkit-checkbox" data-id="${platform.id}" ${checked} ${disabledAttr} style="margin-right: 4px; cursor: ${stateItem.sourceExists ? 'pointer' : 'not-allowed'};" />
-            ${platformIcon}
-            <span class="symlink-name" style="font-size: 13px; font-weight: 600; color: var(--text-default);">${platform.name}</span>
-          </label>
-          <div style="display:flex; align-items:center; gap:8px; flex-shrink: 0;">
-            ${badgeHTML}
-          </div>
-        </div>
-      `;
+document.querySelectorAll('.aha-feature-card').forEach((card) => {
+  card.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.switch-toggle') || target.tagName === 'INPUT') return;
+    const input = card.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (input) {
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event('change'));
     }
+  });
+});
 
-    // Generate OpenSpec HTML Group
-    const osItemsHtml = OPENSPEC_PLATFORMS.map(p => renderPlatformItem(p)).join('');
-    const osCoreActive = getStatus('openspec_core').exists;
-    const osCoreBadge = osCoreActive 
-      ? `<span class="symlink-status-badge symlink-status-linked" style="background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); font-size: 10px; padding: 2px 6px;">Core Active</span>` 
-      : `<span class="symlink-status-badge symlink-status-unlinked" style="font-size: 10px; padding: 2px 6px;">Core Idle</span>`;
-      
-    const openspecHtml = `
-      <div style="display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 20px; background: var(--bg-default); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); height: 100%;">
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="color: var(--accent-default); display: flex; align-items: center; font-size: 18px;">
-              ${icons.openspec}
-            </div>
-            <div class="symlink-info">
-              <span class="symlink-name" style="font-size: 15px; font-weight: 700; color: var(--text-default);">Open Spec</span>
-            </div>
-          </div>
-          ${osCoreBadge}
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 6px;">
-          ${osItemsHtml}
-        </div>
-      </div>
-    `;
+if (dom.ahaDeviceSelect) {
+  dom.ahaDeviceSelect.addEventListener('change', () => {
+    if (dom.ahaConfigDevice && dom.ahaDeviceSelect.value) {
+      dom.ahaConfigDevice.value = dom.ahaDeviceSelect.value;
+    }
+  });
+}
 
-    listContainer.innerHTML = `
-      <div style="display: grid; grid-template-columns: 1fr; gap: 20px; width: 100%;">
-        ${openspecHtml}
-      </div>
-    `;
+if (dom.btnAhaRefreshDevices) {
+  dom.btnAhaRefreshDevices.addEventListener('click', async () => {
+    showToast('Scanning ADB devices...', 'info');
+    await refreshAhaDevices();
+  });
+}
 
-    listContainer.scrollTop = savedScrollTop;
-
-    listContainer.querySelectorAll('.agent-toolkit-checkbox').forEach((checkbox) => {
-      checkbox.addEventListener('change', async (e) => {
-        const target = e.target;
-        const id = target.dataset.id;
-        const isChecked = target.checked;
-        const comp = TOOLKIT_COMPONENTS.find(c => c.id === id);
-
-        if (!comp) return;
-        target.disabled = true;
-
-        const srcBase = openspecPath;
-
-        const safeDeploy = async (name, sourcePath) => {
-          const res = await window.api.deployToolkit({
-            worktreePath: activeWorktreePath,
-            name,
-            sourcePath
-          });
-          if (!res.success) throw new Error(res.error || `Failed to deploy ${name}`);
-        };
-
-        const safeRemove = async (name, sourcePath) => {
-          const res = await window.api.removeToolkit({
-            worktreePath: activeWorktreePath,
-            name,
-            sourcePath
-          });
-          if (!res.success) throw new Error(res.error || `Failed to remove ${name}`);
-        };
-
-        try {
-          if (isChecked) {
-            showToast(`Activating ${comp.name}...`, 'info');
-            
-            // 1. Deploy platform component itself
-            if (comp.isMulti) {
-              for (const f of comp.folders) {
-                await safeDeploy(f.name, joinPath(srcBase, f.name));
-              }
-            } else {
-              await safeDeploy(comp.folderName, joinPath(srcBase, comp.folderName));
-            }
-
-            // Exclude platform component patterns
-            await window.api.updateGitExclude({
-              worktreePath: activeWorktreePath,
-              patterns: comp.gitExcludePatterns,
-              action: 'add'
-            });
-
-            // 2. Deploy core and shared components if not already active
-            if (id.startsWith('openspec_')) {
-              // OpenSpec Core
-              const coreStatus = getStatus('openspec_core');
-              if (!coreStatus.exists) {
-                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
-                if (coreComp) {
-                  await safeDeploy(coreComp.folderName, joinPath(openspecPath, coreComp.folderName));
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: coreComp.gitExcludePatterns,
-                    action: 'add'
-                  });
-                }
-              }
-
-              // OpenSpec Shared
-              const sharedStatus = getStatus('openspec_antigravity');
-              if (!sharedStatus.exists) {
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
-                if (sharedComp) {
-                  for (const f of sharedComp.folders) {
-                    await safeDeploy(f.name, joinPath(openspecPath, f.name));
-                  }
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: sharedComp.gitExcludePatterns,
-                    action: 'add'
-                  });
-                }
-              }
-            }
-
-            showToast(`Successfully activated ${comp.name}!`, 'success');
-          } else {
-            showToast(`Deactivating ${comp.name}...`, 'info');
-            
-            // 1. Remove platform component itself
-            let shouldRemovePlatform = true;
-            if (id === 'openspec_antigravity') {
-              const activeOpenSpecChecks = OPENSPEC_PLATFORMS.filter(p => {
-                if (p.id === id) return false;
-                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
-                return cb && cb.checked;
-              });
-              if (activeOpenSpecChecks.length > 0) {
-                shouldRemovePlatform = false;
-              }
-            }
-
-            if (shouldRemovePlatform) {
-              if (comp.isMulti) {
-                for (const f of comp.folders) {
-                  await safeRemove(f.name, joinPath(srcBase, f.name));
-                }
-              } else {
-                await safeRemove(comp.folderName, joinPath(srcBase, comp.folderName));
-              }
-              await window.api.updateGitExclude({
-                worktreePath: activeWorktreePath,
-                patterns: comp.gitExcludePatterns,
-                action: 'remove'
-              });
-            }
-
-            // 2. Remove core and shared components if no longer needed
-            if (id.startsWith('openspec_')) {
-              const activeOpenSpecChecks = OPENSPEC_PLATFORMS.filter(p => {
-                if (p.id === id) return false;
-                const cb = listContainer.querySelector(`.agent-toolkit-checkbox[data-id="${p.id}"]`);
-                return cb && cb.checked;
-              });
-
-              if (activeOpenSpecChecks.length === 0) {
-                // Remove OpenSpec Core
-                const coreComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_core');
-                if (coreComp) {
-                  await safeRemove(coreComp.folderName, joinPath(openspecPath, coreComp.folderName));
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: coreComp.gitExcludePatterns,
-                    action: 'remove'
-                  });
-                }
-                // Remove OpenSpec Shared
-                const sharedComp = TOOLKIT_COMPONENTS.find(c => c.id === 'openspec_antigravity');
-                if (sharedComp) {
-                  for (const f of sharedComp.folders) {
-                    await safeRemove(f.name, joinPath(openspecPath, f.name));
-                  }
-                  await window.api.updateGitExclude({
-                    worktreePath: activeWorktreePath,
-                    patterns: sharedComp.gitExcludePatterns,
-                    action: 'remove'
-                  });
-                }
-              }
-            }
-
-            showToast(`Successfully deactivated ${comp.name}.`, 'success');
-          }
-        } catch (err) {
-          showToast(`Error: ${err.message}`, 'error');
-          target.checked = !isChecked;
-        } finally {
-          target.disabled = false;
-          await refreshAgentToolkitStatus();
-        }
+if (dom.btnAhaSetDevice) {
+  dom.btnAhaSetDevice.addEventListener('click', async () => {
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) {
+      showToast('Please select a worktree first.', 'warning');
+      return;
+    }
+    const devSerial = dom.ahaConfigDevice ? dom.ahaConfigDevice.value.trim() : '';
+    showToast(`Setting preferred device: ${devSerial || 'any free'}...`, 'info');
+    try {
+      const res = await window.api.ahaVerifier({
+        worktreePath: activeWorktreePath,
+        ahaPath: state.settings.ahaSourcePath,
+        deviceSerial: devSerial,
       });
-    });
+      if (res.success) {
+        showToast(devSerial ? `Preferred device saved: ${devSerial}` : 'Preferred device cleared (any free device).', 'success');
+        await refreshAhaStatus();
+      } else {
+        showToast(`Failed: ${res.error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    }
+  });
+}
 
-  } catch (err) {
-    listContainer.innerHTML = `<div style="color:var(--danger-default); padding:16px;">Failed to load status: ${err.message}</div>`;
-  }
+if (dom.ahaStatusContainer) {
+  dom.ahaStatusContainer.addEventListener('click', async (e) => {
+    const target = (e.target as HTMLElement).closest('button');
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    const plat = target.getAttribute('data-platform') || 'antigravity';
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) return;
+
+    if (action === 'set-verifier') {
+      const mode = target.getAttribute('data-mode');
+      if (!mode) return;
+      showToast(`Switching verifier mode to ${mode}...`, 'info');
+      try {
+        const res = await window.api.ahaVerifier({
+          worktreePath: activeWorktreePath,
+          ahaPath: state.settings.ahaSourcePath,
+          mode,
+          platform: plat,
+        });
+        if (res.success) {
+          showToast(`Verifier mode set to ${mode} (this worktree)!`, 'success');
+          await refreshAhaStatus();
+        } else {
+          showToast(`Error: ${res.error}`, 'error');
+        }
+      } catch (err: any) {
+        showToast(`Error: ${err.message}`, 'error');
+      }
+    } else if (action === 'reset-verifier') {
+      showToast('Resetting verifier mode to project default...', 'info');
+      try {
+        const res = await window.api.ahaVerifier({
+          worktreePath: activeWorktreePath,
+          ahaPath: state.settings.ahaSourcePath,
+          reset: true,
+          platform: plat,
+        });
+        if (res.success) {
+          showToast('Verifier mode reset to project default.', 'success');
+          await refreshAhaStatus();
+        } else {
+          showToast(`Error: ${res.error}`, 'error');
+        }
+      } catch (err: any) {
+        showToast(`Error: ${err.message}`, 'error');
+      }
+    } else if (action === 'toggle-figma-mcp') {
+      const stateAction = target.getAttribute('data-state') as 'on' | 'off';
+      showToast(`Turning Figma MCP server ${stateAction.toUpperCase()}...`, 'info');
+      try {
+        const res = await window.api.ahaMcp({
+          worktreePath: activeWorktreePath,
+          ahaPath: state.settings.ahaSourcePath,
+          action: stateAction,
+          names: ['figma'],
+          platform: plat,
+        });
+        if (res.success) {
+          showToast(`Figma MCP server turned ${stateAction.toUpperCase()}! Restart agent session to reload.`, 'success');
+          await refreshAhaStatus();
+        } else {
+          showToast(`Error: ${res.error}`, 'error');
+        }
+      } catch (err: any) {
+        showToast(`Error: ${err.message}`, 'error');
+      }
+    } else if (action === 'toggle-mobilerun-mcp') {
+      const stateAction = target.getAttribute('data-state') as 'on' | 'off';
+      const targetMode = stateAction === 'on' ? 'full' : 'compact';
+      showToast(`Turning MobileRun MCP server ${stateAction.toUpperCase()} (setting verifier to ${targetMode})...`, 'info');
+      try {
+        const res = await window.api.ahaVerifier({
+          worktreePath: activeWorktreePath,
+          ahaPath: state.settings.ahaSourcePath,
+          mode: targetMode,
+          platform: plat,
+        });
+        if (res.success) {
+          showToast(`MobileRun MCP server turned ${stateAction.toUpperCase()} (verifier set to ${targetMode})! Restart agent session to reload.`, 'success');
+          await refreshAhaStatus();
+        } else {
+          showToast(`Error: ${res.error}`, 'error');
+        }
+      } catch (err: any) {
+        showToast(`Error: ${err.message}`, 'error');
+      }
+    } else if (action === 'quick-update-aha') {
+      if (dom.btnAhaUpdate) (dom.btnAhaUpdate as HTMLButtonElement).click();
+    }
+  });
+}
+
+if (dom.btnAhaRefreshStatus) {
+  dom.btnAhaRefreshStatus.addEventListener('click', async () => {
+    showToast('Refreshing harness status...', 'info');
+    await refreshAhaStatus();
+  });
+}
+
+if (dom.btnAhaInit) {
+  dom.btnAhaInit.addEventListener('click', async () => {
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) {
+      showToast('Please select a worktree first.', 'warning');
+      return;
+    }
+
+    const platform = dom.ahaConfigPlatform ? dom.ahaConfigPlatform.value : 'antigravity';
+    const track = dom.ahaConfigTrack ? dom.ahaConfigTrack.value : 'xml';
+    const profile = dom.ahaConfigProfile ? dom.ahaConfigProfile.value : 'full';
+    let verifierMode = dom.ahaConfigVerifier ? dom.ahaConfigVerifier.value : 'compact';
+    const deviceSerial = dom.ahaConfigDevice ? dom.ahaConfigDevice.value.trim() : '';
+    const subagentModel = dom.ahaConfigSubagentModel ? dom.ahaConfigSubagentModel.value.trim() : '';
+    const noHooks = dom.ahaOptHooks ? !dom.ahaOptHooks.checked : false;
+    const figmaChecked = dom.ahaOptMcpFigma ? dom.ahaOptMcpFigma.checked : true;
+    const mobilerunChecked = dom.ahaOptMcpMobilerun ? dom.ahaOptMcpMobilerun.checked : false;
+    const noAgentsMd = dom.ahaOptRootDoc ? !dom.ahaOptRootDoc.checked : false;
+    const noGitExclude = dom.ahaOptGitExclude ? !dom.ahaOptGitExclude.checked : false;
+
+    if (mobilerunChecked) {
+      verifierMode = 'full';
+    } else if (verifierMode === 'full') {
+      verifierMode = 'compact';
+    }
+
+    const noMcp = !figmaChecked && !mobilerunChecked;
+    const mcp = figmaChecked ? 'figma' : 'none';
+
+    showToast(`Initializing ${platform} harness (${track} / ${profile})...`, 'info');
+    (dom.btnAhaInit as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await window.api.ahaInit({
+        worktreePath: activeWorktreePath,
+        ahaPath: state.settings.ahaSourcePath,
+        platform,
+        track,
+        profile,
+        verifierMode,
+        deviceSerial,
+        subagentModel,
+        noHooks,
+        noMcp,
+        mcp,
+        noAgentsMd,
+        noGitExclude,
+        force: true,
+      });
+
+      if (res.success) {
+        showToast(`Successfully initialized Android harness for ${platform}!`, 'success');
+      } else {
+        showToast(`Initialization error: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      (dom.btnAhaInit as HTMLButtonElement).disabled = false;
+      await refreshAhaStatus();
+    }
+  });
+}
+
+if (dom.btnAhaUpdate) {
+  dom.btnAhaUpdate.addEventListener('click', async () => {
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) {
+      showToast('Please select a worktree first.', 'warning');
+      return;
+    }
+
+    const platform = dom.ahaConfigPlatform ? dom.ahaConfigPlatform.value : 'antigravity';
+    const track = dom.ahaConfigTrack ? dom.ahaConfigTrack.value : 'xml';
+    const profile = dom.ahaConfigProfile ? dom.ahaConfigProfile.value : 'full';
+    let verifierMode = dom.ahaConfigVerifier ? dom.ahaConfigVerifier.value : 'compact';
+    const figmaChecked = dom.ahaOptMcpFigma ? dom.ahaOptMcpFigma.checked : true;
+    const mobilerunChecked = dom.ahaOptMcpMobilerun ? dom.ahaOptMcpMobilerun.checked : false;
+
+    if (mobilerunChecked) {
+      verifierMode = 'full';
+    } else if (verifierMode === 'full') {
+      verifierMode = 'compact';
+    }
+
+    const noMcp = !figmaChecked && !mobilerunChecked;
+    const mcp = figmaChecked ? 'figma' : 'none';
+
+    showToast(`Updating ${platform} harness while keeping local edits...`, 'info');
+    (dom.btnAhaUpdate as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await window.api.ahaUpdate({
+        worktreePath: activeWorktreePath,
+        ahaPath: state.settings.ahaSourcePath,
+        platform,
+        track,
+        profile,
+        verifierMode,
+        noMcp,
+        mcp,
+      });
+
+      if (res.success) {
+        showToast('Successfully updated Android harness files.', 'success');
+      } else {
+        showToast(`Update error: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      (dom.btnAhaUpdate as HTMLButtonElement).disabled = false;
+      await refreshAhaStatus();
+    }
+  });
+}
+
+if (dom.btnAhaUndo) {
+  dom.btnAhaUndo.addEventListener('click', async () => {
+    const activeWorktreePath = state.activeWorktreePath;
+    if (!activeWorktreePath) {
+      showToast('Please select a worktree first.', 'warning');
+      return;
+    }
+
+    const platform = dom.ahaConfigPlatform ? dom.ahaConfigPlatform.value : 'antigravity';
+    showToast(`Removing ${platform} harness...`, 'info');
+    (dom.btnAhaUndo as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await window.api.ahaUndo({
+        worktreePath: activeWorktreePath,
+        ahaPath: state.settings.ahaSourcePath,
+        platform,
+        force: true,
+      });
+
+      if (res.success) {
+        showToast(`Successfully removed Android harness from ${platform}.`, 'success');
+      } else {
+        showToast(`Removal error: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      (dom.btnAhaUndo as HTMLButtonElement).disabled = false;
+      await refreshAhaStatus();
+    }
+  });
 }
 
 if (dom.btnCloseAgentToolkitScreen) {
@@ -3370,6 +3728,7 @@ if (dom.btnAgentToolkit) {
     showAgentToolkitScreen();
   });
 }
+
 
 // ── Plane Task Management Store & Actions ──────────────────
 interface PlaneTasksStore {
